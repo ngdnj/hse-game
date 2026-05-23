@@ -52,3 +52,6 @@ valgrind.log
 # OS specific
 .DS_Store
 Thumbs.db
+
+# macOS resource forks
+.DS_Store
