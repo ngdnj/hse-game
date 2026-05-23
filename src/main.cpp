@@ -12,6 +12,7 @@
 #include "entities/Enemy.hpp"
 #include "entities/Player.hpp"
 #include "entities/ShooterEnemy.hpp"
+#include "ui/HUD.hpp"
 
 using namespace entities;
 
@@ -126,24 +127,7 @@ int main() {
     float accumulator = 0.f;
     sf::Clock gameClock;
 
-    // UI font (use default SFML sans-serif)
-    sf::Font uiFont;
-    bool hasFont = uiFont.openFromFile("/System/Library/Fonts/Helvetica.ttc");
-    if (!hasFont) {
-        std::cerr << "[Game] Could not load UI font, text will be invisible\n";
-    }
-
-    // Helper: draw text
-    auto drawText = [&](sf::RenderTarget& target, const sf::Vector2f& pos,
-                         const std::string& str, unsigned size = 16) {
-        if (!hasFont) return;
-        sf::Text text(uiFont, sf::String(str), size);
-        text.setFillColor(sf::Color::White);
-        text.setOutlineColor(sf::Color::Black);
-        text.setOutlineThickness(1.f);
-        text.setPosition(pos);
-        target.draw(text);
-    };
+    ui::HUD hud;
 
     while (window.isOpen()) {
         // ---- Input ----
@@ -365,31 +349,17 @@ int main() {
         // UI (back to default view so it stays on screen)
         window.setView(window.getDefaultView());
 
-        drawText(window, {10.f, 10.f},
-                 "WASD move | SPACE attack | LShift dash | E pick up loot", 16);
-        drawText(window, {10.f, 30.f},
-                 "Wave: " + std::to_string(waveManager.waveNumber()) +
-                 " | Enemies: " + std::to_string(enemies.size() + shooters.size()) +
-                 " | Kills: " + std::to_string(killCount), 16);
-        if (!waveManager.waveActive()) {
-            drawText(window, {10.f, 50.f},
-                     "Next wave in: " + std::to_string(static_cast<int>(waveManager.waveBreakRemaining())) + "s", 16);
-        } else {
-            drawText(window, {10.f, 50.f},
-                     "Enemies left: " + std::to_string(waveManager.enemiesRemaining()), 16);
-        }
-        drawText(window, {10.f, 70.f},
-                 "Loot: " + std::to_string(loot.size()) +
-                 " | Inv: " + std::to_string(inventory.usedSlots()) +
-                 "/" + std::to_string(inventory.capacity()), 16);
-
-        // Print collected inventory
-        int invY = 90;
-        inventory.forEach([&](const std::string& name, const core::ItemData& data) {
-            drawText(window, {10.f, static_cast<float>(invY)},
-                     name + " x" + std::to_string(data.stackSize), 14);
-            invY += 18;
-        });
+        ui::HudState hudState;
+        hudState.waveNumber = waveManager.waveNumber();
+        hudState.waveActive = waveManager.waveActive();
+        hudState.waveBreakRemainingSec = static_cast<int>(waveManager.waveBreakRemaining());
+        hudState.enemiesAlive = static_cast<int>(enemies.size() + shooters.size());
+        hudState.enemiesRemainingInWave = waveManager.enemiesRemaining();
+        hudState.killCount = killCount;
+        hudState.lootOnGround = static_cast<int>(loot.size());
+        hudState.dashCooldownRemaining = player.dashCooldownRemaining();
+        hudState.inventory = &inventory;
+        hud.draw(window, hudState);
 
         window.display();
 
