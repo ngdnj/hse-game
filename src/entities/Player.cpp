@@ -66,6 +66,7 @@ void Player::update(float dt) {
         }
     }
     dashCooldownTimer_ = std::max(0.f, dashCooldownTimer_ - dt);
+    flashTimer_ = std::max(0.f, flashTimer_ - dt);
 
     handleInput(dt);
     updateAnimation(dt);
@@ -248,11 +249,66 @@ sf::FloatRect Player::attack() noexcept {
 }
 
 void Player::onDraw(sf::RenderTarget &target, sf::RenderStates states) const {
+    const bool flashing = flashTimer_ > 0.f;
     if (hasTexture_) {
-        target.draw(sprite_, states);
+        if (flashing) {
+            // Pulse between bright white and red while damaged.
+            const float t = flashTimer_ / kFlashDuration_;
+            const auto r = static_cast<std::uint8_t>(255);
+            const auto gb = static_cast<std::uint8_t>(80 + 175 * (1.f - t));
+            sf::Sprite tinted = sprite_;
+            tinted.setColor(sf::Color(r, gb, gb));
+            target.draw(tinted, states);
+        } else {
+            target.draw(sprite_, states);
+        }
     } else {
-        target.draw(shape_, states);
+        if (flashing) {
+            sf::RectangleShape tinted = shape_;
+            tinted.setFillColor(sf::Color(255, 120, 120));
+            target.draw(tinted, states);
+        } else {
+            target.draw(shape_, states);
+        }
     }
+
+    // Attack slash arc — visible briefly after attack starts.
+    if (attackCooldown_ > attackDuration_ - kSlashVisibleDuration_) {
+        drawSlash(target, states);
+    }
+}
+
+void Player::drawSlash(sf::RenderTarget &target, sf::RenderStates states) const {
+    (void)states;
+    if (lastDir_.x == 0.f && lastDir_.y == 0.f) return;
+
+    // How far into the slash visibility window we are: 1.0 just after attack
+    // started, decaying to 0.0 at the end of the visible window.
+    const float remaining = attackCooldown_ - (attackDuration_ - kSlashVisibleDuration_);
+    if (remaining <= 0.f) return;
+    const float t = std::clamp(remaining / kSlashVisibleDuration_, 0.f, 1.f);
+
+    const float baseAngle = std::atan2(lastDir_.y, lastDir_.x);
+    const float arcHalfAngle = std::numbers::pi_v<float> / 3.f; // 60° to each side
+    const float radius = attackRange_;
+    constexpr int kSegments = 16;
+
+    sf::VertexArray fan(sf::PrimitiveType::TriangleFan, kSegments + 2);
+    const sf::Vector2f origin = getPosition();
+    const auto alpha = static_cast<std::uint8_t>(220.f * t);
+    const sf::Color tip(255, 240, 180, alpha);
+    const sf::Color edge(255, 200, 80, static_cast<std::uint8_t>(60.f * t));
+
+    fan[0].position = origin;
+    fan[0].color = tip;
+    for (int i = 0; i <= kSegments; ++i) {
+        const float frac = static_cast<float>(i) / static_cast<float>(kSegments);
+        const float angle = baseAngle - arcHalfAngle + frac * 2.f * arcHalfAngle;
+        fan[i + 1].position = origin + sf::Vector2f{std::cos(angle), std::sin(angle)} * radius;
+        fan[i + 1].color = edge;
+    }
+    sf::RenderStates worldStates; // world-space, ignore entity transform
+    target.draw(fan, worldStates);
 }
 
 bool Player::loadSheet(const std::string &name, const std::string &path) {
@@ -451,6 +507,7 @@ float Player::dashCooldownRemaining() const noexcept {
 void Player::takeDamage(int amount) noexcept {
     if (amount <= 0) return;
     health_ = std::max(0, health_ - amount);
+    flashTimer_ = kFlashDuration_;
 }
 
 void Player::setMaxHealth(int hp) noexcept {
@@ -472,5 +529,6 @@ void Player::reset(const sf::Vector2f& startPosition) noexcept {
     isDashing_ = false;
     dashTimer_ = 0.f;
     dashCooldownTimer_ = 0.f;
+    flashTimer_ = 0.f;
     lastDir_ = {1.f, 0.f};
 }

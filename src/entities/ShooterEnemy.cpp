@@ -42,6 +42,8 @@ sf::Vector2f ShooterEnemy::normalizeOrZero(sf::Vector2f v) {
 void ShooterEnemy::update(float dt) {
     if (!isActive() || isDead()) return;
 
+    flashTimer_ = std::max(0.f, flashTimer_ - dt);
+
     // Tick knockback
     if (knockbackVel_.x != 0.f || knockbackVel_.y != 0.f) {
         const Vector2f resolvedKb = resolveMove(knockbackVel_ * dt);
@@ -97,6 +99,7 @@ void ShooterEnemy::update(float dt) {
 
 void ShooterEnemy::takeDamage(int amount) {
     health_ = std::max(0, health_ - amount);
+    flashTimer_ = kFlashDuration_;
     if (isDead()) markForRemoval();
 }
 
@@ -112,7 +115,16 @@ std::vector<std::unique_ptr<Projectile>> ShooterEnemy::extractFiredProjectiles()
 }
 
 void ShooterEnemy::onDraw(sf::RenderTarget& target, sf::RenderStates states) const {
-    if (shape_) target.draw(*shape_, states);
+    if (shape_) {
+        if (flashTimer_ > 0.f) {
+            const Color savedFill = shape_->getFillColor();
+            shape_->setFillColor(Color(255, 240, 240));
+            target.draw(*shape_, states);
+            shape_->setFillColor(savedFill);
+        } else {
+            target.draw(*shape_, states);
+        }
+    }
 
     // Health bar
     const float barW = 40.f;

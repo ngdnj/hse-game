@@ -153,6 +153,16 @@ int main() {
     float accumulator = 0.f;
     sf::Clock gameClock;
 
+    // Screen shake state: magnitude (px) decays toward 0 each frame; offset
+    // is applied to the camera center at render time, then reset for next frame.
+    float shakeMagnitude = 0.f;
+    constexpr float kShakeDecayPerSec = 9.f;
+    constexpr float kShakeMaxMagnitude = 18.f;
+    auto triggerShake = [&](float mag) {
+        shakeMagnitude = std::min(kShakeMaxMagnitude, std::max(shakeMagnitude, mag));
+    };
+    std::uniform_real_distribution<float> shakeDist{-1.f, 1.f};
+
     ui::HUD hud;
 
     while (window.isOpen()) {
@@ -220,6 +230,7 @@ int main() {
                     if (!enemy->isAlive()) continue;
                     if (hitbox.findIntersection(enemy->getGlobalBounds()).has_value()) {
                         enemy->takeDamage(player.attackDamage());
+                        triggerShake(4.f);
                         const sf::Vector2f enemyPos = enemy->getPosition();
                         const sf::Vector2f playerPos = player.getPosition();
                         const sf::Vector2f toEnemy = enemyPos - playerPos;
@@ -233,6 +244,7 @@ int main() {
                         if (enemy->isDead()) {
                             std::cout << "[Combat] Chaser killed!\n";
                             ++killCount;
+                            triggerShake(7.f);
                             waveManager.onEnemyKilled();
                             loot.push_back(std::make_unique<entities::Loot>(
                                 enemy->getPosition(), "coin", 5));
@@ -243,6 +255,7 @@ int main() {
                     if (!shooter->isAlive()) continue;
                     if (hitbox.findIntersection(shooter->getGlobalBounds()).has_value()) {
                         shooter->takeDamage(player.attackDamage());
+                        triggerShake(4.f);
                         const sf::Vector2f shooterPos = shooter->getPosition();
                         const sf::Vector2f toShooter = shooterPos - player.getPosition();
                         const float dist = std::sqrt(toShooter.x * toShooter.x + toShooter.y * toShooter.y);
@@ -255,6 +268,7 @@ int main() {
                         if (shooter->isDead()) {
                             std::cout << "[Combat] Shooter killed!\n";
                             ++killCount;
+                            triggerShake(8.f);
                             waveManager.onEnemyKilled();
                             loot.push_back(std::make_unique<entities::Loot>(
                                 shooter->getPosition(), "coin", 10));
@@ -285,6 +299,7 @@ int main() {
                 for (auto& proj : shooter->projectiles()) {
                     if (!proj->consumed() && proj->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
                         player.takeDamage(proj->damage());
+                        triggerShake(10.f);
                         std::cout << "[Combat] Player hit by projectile! HP: "
                                   << player.health() << "/" << player.maxHealth() << "\n";
                         proj->markConsumed();
@@ -374,6 +389,18 @@ int main() {
         // ---- Render ----
         window.clear(sf::Color(20, 24, 32));
 
+        // Decay shake and apply a temporary random offset to the camera for
+        // this frame only. Magnitude decays exponentially so impacts feel
+        // punchy but settle quickly.
+        const sf::Vector2f preShakeCenter = camera.getCenter();
+        sf::Vector2f shakeOffset{0.f, 0.f};
+        if (shakeMagnitude > 0.f) {
+            shakeOffset = {shakeDist(rng()) * shakeMagnitude,
+                           shakeDist(rng()) * shakeMagnitude};
+            camera.setCenter(preShakeCenter + shakeOffset);
+            shakeMagnitude = std::max(0.f, shakeMagnitude - kShakeDecayPerSec * realDt);
+        }
+
         // Set camera view (world space)
         window.setView(camera);
 
@@ -435,6 +462,11 @@ int main() {
         hud.draw(window, hudState);
 
         window.display();
+
+        // Undo shake offset so smooth follow operates on the true center.
+        if (shakeOffset.x != 0.f || shakeOffset.y != 0.f) {
+            camera.setCenter(preShakeCenter);
+        }
 
         // Smooth camera follow
         const sf::Vector2f targetCenter = player.getPosition();
