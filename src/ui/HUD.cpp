@@ -22,12 +22,13 @@ HUD::HUD(const std::string& fontPath) {
 
 void HUD::draw(sf::RenderTarget& target, const HudState& state) const {
     drawText(target, {10.f, 10.f},
-             "WASD move | SPACE attack | LShift dash | E pick up loot", 16);
+             "WASD move | SPACE attack | Q swap weapon | LShift dash | E pick up loot", 16);
 
     drawText(target, {10.f, 30.f},
              "Wave: " + std::to_string(state.waveNumber) +
              " | Enemies: " + std::to_string(state.enemiesAlive) +
-             " | Kills: " + std::to_string(state.killCount), 16);
+             " | Kills: " + std::to_string(state.killCount) +
+             " | Weapon: " + state.weaponName, 16);
 
     if (state.waveActive) {
         drawText(target, {10.f, 50.f},

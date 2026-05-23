@@ -11,6 +11,8 @@
 #include "core/ResourceManager.hpp"
 #include "core/Shop.hpp"
 #include "core/WaveManager.hpp"
+#include "combat/ShotgunWeapon.hpp"
+#include "combat/SwordWeapon.hpp"
 #include "entities/Enemy.hpp"
 #include "entities/Player.hpp"
 #include "entities/ShooterEnemy.hpp"
@@ -118,6 +120,7 @@ int main() {
     std::vector<std::unique_ptr<entities::Enemy>> enemies;
     std::vector<std::unique_ptr<entities::ShooterEnemy>> shooters;
     std::vector<std::unique_ptr<entities::Loot>> loot;
+    std::vector<std::unique_ptr<entities::Projectile>> playerProjectiles;
 
     int killCount = 0;
 
@@ -136,10 +139,11 @@ int main() {
     auto resetGame = [&]() {
         player.reset(playerSpawn);
         player.setSpeed(220.f);
-        player.setAttackDamage(25);
+        player.setWeapon(std::make_unique<combat::SwordWeapon>(25, 55.f));
         enemies.clear();
         shooters.clear();
         loot.clear();
+        playerProjectiles.clear();
         inventory = core::Inventory(20);
         killCount = 0;
         waveManager = core::WaveManager(4.f);
@@ -196,7 +200,7 @@ int main() {
                         resetGame();
                     }
                 } else {
-                    // Playing: E key to pick up loot
+                    // Playing: E key to pick up loot, Q toggles weapon
                     if (key->code == sf::Keyboard::Key::E) {
                         for (auto& l : loot) {
                             if (!l->consumed() && l->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
@@ -205,6 +209,14 @@ int main() {
                                 inventory.addItem(l->itemName(), {.stackSize = l->value()});
                                 l->consume();
                             }
+                        }
+                    } else if (key->code == sf::Keyboard::Key::Q) {
+                        if (player.weapon() && player.weapon()->name() == "Sword") {
+                            player.setWeapon(std::make_unique<combat::ShotgunWeapon>());
+                            std::cout << "[Weapon] Switched to Shotgun\n";
+                        } else {
+                            player.setWeapon(std::make_unique<combat::SwordWeapon>(25, 55.f));
+                            std::cout << "[Weapon] Switched to Sword\n";
                         }
                     }
                 }
@@ -223,57 +235,69 @@ int main() {
             // Player
             player.update(kFixedDt);
 
-            // Combat: attack triggers a hitbox; check against enemies and shooters
-            if (player.isAttacking()) {
-                const auto& hitbox = player.attackHitbox();
-                for (auto& enemy : enemies) {
-                    if (!enemy->isAlive()) continue;
-                    if (hitbox.findIntersection(enemy->getGlobalBounds()).has_value()) {
-                        enemy->takeDamage(player.attackDamage());
-                        triggerShake(4.f);
-                        const sf::Vector2f enemyPos = enemy->getPosition();
-                        const sf::Vector2f playerPos = player.getPosition();
-                        const sf::Vector2f toEnemy = enemyPos - playerPos;
-                        const float dist = std::sqrt(toEnemy.x * toEnemy.x + toEnemy.y * toEnemy.y);
-                        if (dist > 0.001f) {
-                            const sf::Vector2f dir{toEnemy.x / dist, toEnemy.y / dist};
-                            enemy->applyKnockback({dir.x * 300.f, dir.y * 300.f});
+            // Combat: fire active weapon if Space is held and weapon is ready.
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space)
+                && player.weapon() && player.weapon()->canFire()) {
+                auto result = player.tryFire();
+                const float kb = result.knockbackMultiplier;
+                if (result.hasMeleeHitbox) {
+                    const auto& hitbox = result.meleeHitbox;
+                    for (auto& enemy : enemies) {
+                        if (!enemy->isAlive()) continue;
+                        if (hitbox.findIntersection(enemy->getGlobalBounds()).has_value()) {
+                            enemy->takeDamage(player.attackDamage());
+                            triggerShake(4.f);
+                            const sf::Vector2f enemyPos = enemy->getPosition();
+                            const sf::Vector2f playerPos = player.getPosition();
+                            const sf::Vector2f toEnemy = enemyPos - playerPos;
+                            const float dist = std::sqrt(toEnemy.x * toEnemy.x + toEnemy.y * toEnemy.y);
+                            if (dist > 0.001f) {
+                                const sf::Vector2f dir{toEnemy.x / dist, toEnemy.y / dist};
+                                enemy->applyKnockback({dir.x * 300.f * kb, dir.y * 300.f * kb});
+                            }
+                            std::cout << "[Combat] Hit chaser! HP: "
+                                      << enemy->health() << "/" << enemy->maxHealth() << "\n";
+                            if (enemy->isDead()) {
+                                std::cout << "[Combat] Chaser killed!\n";
+                                ++killCount;
+                                triggerShake(7.f);
+                                waveManager.onEnemyKilled();
+                                loot.push_back(std::make_unique<entities::Loot>(
+                                    enemy->getPosition(), "coin", 5));
+                            }
                         }
-                        std::cout << "[Combat] Hit chaser! HP: "
-                                  << enemy->health() << "/" << enemy->maxHealth() << "\n";
-                        if (enemy->isDead()) {
-                            std::cout << "[Combat] Chaser killed!\n";
-                            ++killCount;
-                            triggerShake(7.f);
-                            waveManager.onEnemyKilled();
-                            loot.push_back(std::make_unique<entities::Loot>(
-                                enemy->getPosition(), "coin", 5));
+                    }
+                    for (auto& shooter : shooters) {
+                        if (!shooter->isAlive()) continue;
+                        if (hitbox.findIntersection(shooter->getGlobalBounds()).has_value()) {
+                            shooter->takeDamage(player.attackDamage());
+                            triggerShake(4.f);
+                            const sf::Vector2f shooterPos = shooter->getPosition();
+                            const sf::Vector2f toShooter = shooterPos - player.getPosition();
+                            const float dist = std::sqrt(toShooter.x * toShooter.x + toShooter.y * toShooter.y);
+                            if (dist > 0.001f) {
+                                const sf::Vector2f dir{toShooter.x / dist, toShooter.y / dist};
+                                shooter->applyKnockback({dir.x * 250.f * kb, dir.y * 250.f * kb});
+                            }
+                            std::cout << "[Combat] Hit shooter! HP: "
+                                      << shooter->health() << "/" << shooter->maxHealth() << "\n";
+                            if (shooter->isDead()) {
+                                std::cout << "[Combat] Shooter killed!\n";
+                                ++killCount;
+                                triggerShake(8.f);
+                                waveManager.onEnemyKilled();
+                                loot.push_back(std::make_unique<entities::Loot>(
+                                    shooter->getPosition(), "coin", 10));
+                            }
                         }
                     }
                 }
-                for (auto& shooter : shooters) {
-                    if (!shooter->isAlive()) continue;
-                    if (hitbox.findIntersection(shooter->getGlobalBounds()).has_value()) {
-                        shooter->takeDamage(player.attackDamage());
-                        triggerShake(4.f);
-                        const sf::Vector2f shooterPos = shooter->getPosition();
-                        const sf::Vector2f toShooter = shooterPos - player.getPosition();
-                        const float dist = std::sqrt(toShooter.x * toShooter.x + toShooter.y * toShooter.y);
-                        if (dist > 0.001f) {
-                            const sf::Vector2f dir{toShooter.x / dist, toShooter.y / dist};
-                            shooter->applyKnockback({dir.x * 250.f, dir.y * 250.f});
-                        }
-                        std::cout << "[Combat] Hit shooter! HP: "
-                                  << shooter->health() << "/" << shooter->maxHealth() << "\n";
-                        if (shooter->isDead()) {
-                            std::cout << "[Combat] Shooter killed!\n";
-                            ++killCount;
-                            triggerShake(8.f);
-                            waveManager.onEnemyKilled();
-                            loot.push_back(std::make_unique<entities::Loot>(
-                                shooter->getPosition(), "coin", 10));
-                        }
-                    }
+                for (auto& proj : result.projectiles) {
+                    playerProjectiles.push_back(std::move(proj));
+                }
+                if (!result.projectiles.empty() || result.hasMeleeHitbox) {
+                    // Weak shake just for firing weight on shotgun.
+                    triggerShake(result.hasMeleeHitbox ? 0.f : 5.f);
                 }
             }
 
@@ -308,6 +332,45 @@ int main() {
                             std::cout << "[Game] Player died -- GAME OVER\n";
                         }
                     }
+                }
+            }
+
+            // Player projectiles (shotgun pellets) — update + collide vs enemies
+            for (auto& proj : playerProjectiles) proj->update(kFixedDt);
+            for (auto& proj : playerProjectiles) {
+                if (proj->consumed()) continue;
+                const auto projBounds = proj->getGlobalBounds();
+                auto applyHit = [&](auto& target, float kbForce, int coinValue,
+                                    const char* label) {
+                    if (!target->isAlive()) return false;
+                    if (!projBounds.findIntersection(target->getGlobalBounds()).has_value()) {
+                        return false;
+                    }
+                    target->takeDamage(proj->damage());
+                    triggerShake(3.f);
+                    const sf::Vector2f to = target->getPosition() - player.getPosition();
+                    const float dist = std::sqrt(to.x * to.x + to.y * to.y);
+                    if (dist > 0.001f) {
+                        const sf::Vector2f dir{to.x / dist, to.y / dist};
+                        target->applyKnockback({dir.x * kbForce, dir.y * kbForce});
+                    }
+                    if (target->isDead()) {
+                        ++killCount;
+                        triggerShake(7.f);
+                        waveManager.onEnemyKilled();
+                        loot.push_back(std::make_unique<entities::Loot>(
+                            target->getPosition(), "coin", coinValue));
+                        std::cout << "[Combat] " << label << " killed by pellet!\n";
+                    }
+                    proj->markConsumed();
+                    return true;
+                };
+                for (auto& enemy : enemies) {
+                    if (applyHit(enemy, 220.f, 5, "Chaser")) break;
+                }
+                if (proj->consumed()) continue;
+                for (auto& shooter : shooters) {
+                    if (applyHit(shooter, 220.f, 10, "Shooter")) break;
                 }
             }
 
@@ -385,6 +448,22 @@ int main() {
                 if (!l->consumed()) loot.push_back(std::move(l));
             }
         }
+        {
+            auto activeProj = std::move(playerProjectiles);
+            playerProjectiles.clear();
+            for (auto& p : activeProj) {
+                if (p->consumed()) continue;
+                // Despawn pellets that left the world
+                const auto gb = p->getGlobalBounds();
+                if (gb.position.x + gb.size.x < worldBounds.position.x ||
+                    gb.position.y + gb.size.y < worldBounds.position.y ||
+                    gb.position.x > worldBounds.position.x + worldBounds.size.x ||
+                    gb.position.y > worldBounds.position.y + worldBounds.size.y) {
+                    continue;
+                }
+                playerProjectiles.push_back(std::move(p));
+            }
+        }
 
         // ---- Render ----
         window.clear(sf::Color(20, 24, 32));
@@ -441,6 +520,9 @@ int main() {
         // Player
         window.draw(player);
 
+        // Player projectiles (pellets)
+        for (auto& p : playerProjectiles) window.draw(*p);
+
         // UI (back to default view so it stays on screen)
         window.setView(window.getDefaultView());
 
@@ -459,6 +541,9 @@ int main() {
         hudState.shopOpen = (gameState == core::GameState::Shop);
         hudState.shop = &shop;
         hudState.isGameOver = (gameState == core::GameState::GameOver);
+        hudState.weaponName = player.weapon()
+            ? std::string(player.weapon()->name())
+            : std::string("(none)");
         hud.draw(window, hudState);
 
         window.display();

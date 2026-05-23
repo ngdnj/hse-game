@@ -30,6 +30,8 @@ struct HudState {
     const core::Shop* shop{nullptr}; // not owned
 
     bool isGameOver{false};
+
+    std::string weaponName{"Sword"};
 };
 
 class HUD {
