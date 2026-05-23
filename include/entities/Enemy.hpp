@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Collision.hpp"
 #include "core/Entity.hpp"
 #include "core/ResourceManager.hpp"
 #include <SFML/Graphics.hpp>
@@ -21,6 +22,8 @@ public:
 
     void setPlayerPosition(const sf::Vector2f* pos) { playerPos_ = pos; }
     void setChaseSpeed(float speed) noexcept { chaseSpeed_ = speed; }
+    void setObstacles(const std::vector<core::AABB>* obstacles) noexcept { obstacles_ = obstacles; }
+    sf::Vector2f resolveMove(sf::Vector2f desired) noexcept;
 
 protected:
     void onDraw(sf::RenderTarget& target, sf::RenderStates states) const override;
@@ -41,6 +44,7 @@ private:
 
     // AI
     float chaseSpeed_{100.f};
+    const std::vector<core::AABB>* obstacles_{nullptr};
 };
 
 class Loot final : public Entity {

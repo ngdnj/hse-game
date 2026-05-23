@@ -60,7 +60,10 @@ void Enemy::update(float dt) {
         const float dist = std::sqrt(toPlayer.x * toPlayer.x + toPlayer.y * toPlayer.y);
 
         if (dist > 5.f) { // don't jitter when very close
-            move(dir * chaseSpeed_ * dt);
+            const Vector2f resolved = resolveMove(dir * chaseSpeed_ * dt);
+            if (resolved.x != 0.f || resolved.y != 0.f) {
+                move(resolved);
+            }
         }
     }
 
@@ -83,6 +86,15 @@ void Enemy::update(float dt) {
 void Enemy::takeDamage(int amount) {
     health_ = std::max(0, health_ - amount);
     if (isDead()) markForRemoval();
+}
+
+sf::Vector2f Enemy::resolveMove(sf::Vector2f desired) noexcept {
+    if (!obstacles_ || (desired.x == 0.f && desired.y == 0.f)) {
+        return desired;
+    }
+    const auto gb = getGlobalBounds();
+    core::AABB entityAABB = core::fromFloatRect(gb);
+    return core::resolveMovement(entityAABB, desired, *obstacles_);
 }
 
 void Enemy::onDraw(sf::RenderTarget& target, sf::RenderStates states) const {
