@@ -58,6 +58,15 @@ Player::Player(const sf::Vector2f &size, const sf::Vector2f &startPosition,
 void Player::update(float dt) {
     if (!isActive()) return;
 
+    // Tick dash state machine
+    if (isDashing_) {
+        dashTimer_ -= dt;
+        if (dashTimer_ <= 0.f) {
+            isDashing_ = false;
+        }
+    }
+    dashCooldownTimer_ = std::max(0.f, dashCooldownTimer_ - dt);
+
     handleInput(dt);
     updateAnimation(dt);
     clampToBounds();
@@ -88,8 +97,22 @@ void Player::handleInput(float dt) {
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D)) {
         dir.x += 1.f;
     }
-    if (hasInput(dir)) {
+
+    // Trigger dash on Shift (only when not already dashing and cooldown ready)
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift) && !isDashing_ && dashCooldownTimer_ <= 0.f) {
+        dash();
+    }
+
+    // While dashing, override movement with dash direction
+    if (isDashing_) {
+        const sf::Vector2f resolved = resolveMove(dashDir_ * dashSpeed_ * dt);
+        if (resolved.x != 0.f || resolved.y != 0.f) {
+            move(resolved);
+        }
+    } else if (hasInput(dir)) {
         const sf::Vector2f norm = normalizeOrZero(dir);
+        // Save last direction for dash/attack
+        if (norm.x != 0.f || norm.y != 0.f) lastDir_ = norm;
         const sf::Vector2f resolved = resolveMove(norm * speed_ * dt);
         if (resolved.x != 0.f || resolved.y != 0.f) {
             move(resolved);
@@ -406,4 +429,21 @@ sf::Vector2f Player::resolveMove(sf::Vector2f desired) noexcept {
     const sf::FloatRect gb = getGlobalBounds();
     core::AABB entityAABB = core::fromFloatRect(gb);
     return core::resolveMovement(entityAABB, desired, *obstacles_);
+}
+
+void Player::dash() noexcept {
+    if (dashCooldownTimer_ > 0.f) return;
+    // Dash in current lastDir_, or right if no direction yet
+    if (lastDir_.x == 0.f && lastDir_.y == 0.f) {
+        dashDir_ = {1.f, 0.f};
+    } else {
+        dashDir_ = normalizeOrZero(lastDir_);
+    }
+    isDashing_ = true;
+    dashTimer_ = dashDuration_;
+    dashCooldownTimer_ = dashCooldownDuration_;
+}
+
+float Player::dashCooldownRemaining() const noexcept {
+    return std::max(0.f, dashCooldownTimer_);
 }

@@ -53,6 +53,21 @@ FloatRect Enemy::getLocalBounds() const {
 void Enemy::update(float dt) {
     if (!isActive() || isDead()) return;
 
+    // Apply and dampen knockback velocity
+    if (knockbackVel_.x != 0.f || knockbackVel_.y != 0.f) {
+        const Vector2f resolvedKb = resolveMove(knockbackVel_ * dt);
+        if (resolvedKb.x != 0.f || resolvedKb.y != 0.f) {
+            move(resolvedKb);
+        }
+        // Dampen: reduce by 80% per second
+        const float decay = std::exp(-8.f * dt);
+        knockbackVel_.x *= decay;
+        knockbackVel_.y *= decay;
+        if (std::abs(knockbackVel_.x) < 0.5f && std::abs(knockbackVel_.y) < 0.5f) {
+            knockbackVel_ = {0.f, 0.f};
+        }
+    }
+
     // Simple chase: move toward player if position is known
     if (playerPos_) {
         const Vector2f toPlayer = *playerPos_ - getPosition();

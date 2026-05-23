@@ -10,6 +10,7 @@
 #include "core/ResourceManager.hpp"
 #include "entities/Enemy.hpp"
 #include "entities/Player.hpp"
+#include "entities/ShooterEnemy.hpp"
 
 using namespace entities;
 
@@ -110,6 +111,7 @@ int main() {
 
     // Game state
     std::vector<std::unique_ptr<entities::Enemy>> enemies;
+    std::vector<std::unique_ptr<entities::ShooterEnemy>> shooters;
     std::vector<std::unique_ptr<entities::Loot>> loot;
 
     float spawnTimer = 0.f;
@@ -170,21 +172,49 @@ int main() {
             // Player
             player.update(kFixedDt);
 
-            // Combat: attack triggers a hitbox; check against enemies
+            // Combat: attack triggers a hitbox; check against enemies and shooters
             if (player.isAttacking()) {
                 const auto& hitbox = player.attackHitbox();
                 for (auto& enemy : enemies) {
                     if (!enemy->isAlive()) continue;
                     if (hitbox.findIntersection(enemy->getGlobalBounds()).has_value()) {
                         enemy->takeDamage(player.attackDamage());
-                        std::cout << "[Combat] Hit enemy! HP: "
+                        const sf::Vector2f enemyPos = enemy->getPosition();
+                        const sf::Vector2f playerPos = player.getPosition();
+                        const sf::Vector2f toEnemy = enemyPos - playerPos;
+                        const float dist = std::sqrt(toEnemy.x * toEnemy.x + toEnemy.y * toEnemy.y);
+                        if (dist > 0.001f) {
+                            const sf::Vector2f dir{toEnemy.x / dist, toEnemy.y / dist};
+                            enemy->applyKnockback({dir.x * 300.f, dir.y * 300.f});
+                        }
+                        std::cout << "[Combat] Hit chaser! HP: "
                                   << enemy->health() << "/" << enemy->maxHealth() << "\n";
                         if (enemy->isDead()) {
-                            std::cout << "[Combat] Enemy killed!\n";
+                            std::cout << "[Combat] Chaser killed!\n";
                             ++killCount;
-                            // Drop loot at enemy position
                             loot.push_back(std::make_unique<entities::Loot>(
                                 enemy->getPosition(), "coin", 5));
+                        }
+                    }
+                }
+                for (auto& shooter : shooters) {
+                    if (!shooter->isAlive()) continue;
+                    if (hitbox.findIntersection(shooter->getGlobalBounds()).has_value()) {
+                        shooter->takeDamage(player.attackDamage());
+                        const sf::Vector2f shooterPos = shooter->getPosition();
+                        const sf::Vector2f toShooter = shooterPos - player.getPosition();
+                        const float dist = std::sqrt(toShooter.x * toShooter.x + toShooter.y * toShooter.y);
+                        if (dist > 0.001f) {
+                            const sf::Vector2f dir{toShooter.x / dist, toShooter.y / dist};
+                            shooter->applyKnockback({dir.x * 250.f, dir.y * 250.f});
+                        }
+                        std::cout << "[Combat] Hit shooter! HP: "
+                                  << shooter->health() << "/" << shooter->maxHealth() << "\n";
+                        if (shooter->isDead()) {
+                            std::cout << "[Combat] Shooter killed!\n";
+                            ++killCount;
+                            loot.push_back(std::make_unique<entities::Loot>(
+                                shooter->getPosition(), "coin", 10));
                         }
                     }
                 }
@@ -198,6 +228,23 @@ int main() {
                 if (!enemy->isAlive()) continue;
                 enemy->setPlayerPosition(&playerPos);
                 enemy->update(kFixedDt);
+            }
+
+            // Shooters
+            for (auto& shooter : shooters) {
+                if (!shooter->isAlive()) continue;
+                shooter->setPlayerPosition(&playerPos);
+                shooter->update(kFixedDt);
+            }
+
+            // Projectile-player collision
+            for (auto& shooter : shooters) {
+                for (auto& proj : shooter->projectiles()) {
+                    if (!proj->consumed() && proj->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
+                        std::cout << "[Combat] Player hit by projectile!\n";
+                        proj->markConsumed();
+                    }
+                }
             }
 
             // Loot (remove consumed)
@@ -214,15 +261,24 @@ int main() {
             ++steps;
         }
 
-        // Spawn enemies periodically
+        // Spawn enemies: alternate between chasers and shooters
         spawnTimer += realDt;
-        if (spawnTimer >= kSpawnInterval && enemies.size() < kMaxEnemies) {
+        const bool canSpawnChaser = enemies.size() < kMaxEnemies;
+        const bool canSpawnShooter = shooters.size() < 4;
+        if (spawnTimer >= kSpawnInterval && (canSpawnChaser || canSpawnShooter)) {
             spawnTimer = 0.f;
             auto pos = randomEdgePosition(worldBounds);
-            enemies.push_back(std::make_unique<entities::Enemy>(
-                pos, sf::Vector2f{36.f, 36.f}, worldBounds, &res));
-            enemies.back()->setObstacles(&obstacleAABBs);
-            std::cout << "[Spawn] New enemy at (" << pos.x << "," << pos.y << ")\n";
+            if (canSpawnChaser && ((enemies.size() <= shooters.size()) || !canSpawnShooter)) {
+                enemies.push_back(std::make_unique<entities::Enemy>(
+                    pos, sf::Vector2f{36.f, 36.f}, worldBounds, &res));
+                enemies.back()->setObstacles(&obstacleAABBs);
+                std::cout << "[Spawn] Chaser at (" << pos.x << "," << pos.y << ")\n";
+            } else if (canSpawnShooter) {
+                shooters.push_back(std::make_unique<entities::ShooterEnemy>(
+                    pos, worldBounds, &res));
+                shooters.back()->setObstacles(&obstacleAABBs);
+                std::cout << "[Spawn] Shooter at (" << pos.x << "," << pos.y << ")\n";
+            }
         }
 
         // ---- Deferred removal (dead enemies and consumed loot) ----
@@ -231,6 +287,13 @@ int main() {
             enemies.clear();
             for (auto& e : deadEnemies) {
                 if (e->isAlive()) enemies.push_back(std::move(e));
+            }
+        }
+        {
+            auto deadShooters = std::move(shooters);
+            shooters.clear();
+            for (auto& s : deadShooters) {
+                if (s->isAlive()) shooters.push_back(std::move(s));
             }
         }
         {
@@ -277,6 +340,9 @@ int main() {
 
         // Enemies
         for (auto& e : enemies) window.draw(*e);
+
+        // Shooters
+        for (auto& s : shooters) window.draw(*s);
 
         // Player
         window.draw(player);
