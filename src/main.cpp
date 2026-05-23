@@ -11,8 +11,11 @@
 #include "core/ResourceManager.hpp"
 #include "core/Shop.hpp"
 #include "core/WaveManager.hpp"
+#include "combat/Artifacts.hpp"
 #include "combat/ShotgunWeapon.hpp"
 #include "combat/SwordWeapon.hpp"
+#include "core/EventBus.hpp"
+#include "core/Shop.hpp"
 #include "entities/Enemy.hpp"
 #include "entities/Player.hpp"
 #include "entities/ShooterEnemy.hpp"
@@ -131,6 +134,58 @@ int main() {
     // Shop (opens between waves)
     core::Shop shop;
 
+    // Screen shake state: magnitude (px) decays toward 0 each frame; offset
+    // is applied to the camera center at render time, then reset for next frame.
+    float shakeMagnitude = 0.f;
+    constexpr float kShakeDecayPerSec = 9.f;
+    constexpr float kShakeMaxMagnitude = 18.f;
+    std::uniform_real_distribution<float> shakeDist{-1.f, 1.f};
+    auto triggerShake = [&](float mag) {
+        shakeMagnitude = std::min(kShakeMaxMagnitude, std::max(shakeMagnitude, mag));
+    };
+
+    // Event bus for artifact effects
+    core::EventBus eventBus;
+    combat::VampiricFang vampiricFang;
+    combat::ExplosiveShells explosiveShells;
+    eventBus.subscribe<core::EnemyKilledEvent>([&](const core::EnemyKilledEvent& e) {
+        vampiricFang.onEnemyKilled(e);
+        const int heals = vampiricFang.pendingHeals();
+        if (heals > 0) {
+            player.heal(heals);
+            vampiricFang.consumeHeals();
+            std::cout << "[Artifact] Vampiric Fang healed " << heals << " HP\n";
+        }
+    });
+    eventBus.subscribe<core::AreaDamageRequest>([&](const core::AreaDamageRequest& req) {
+        explosiveShells.onAreaDamageRequest(req);
+        for (const auto& expl : explosiveShells.pendingExplosions()) {
+            for (auto& enemy : enemies) {
+                if (!enemy->isAlive()) continue;
+                const sf::Vector2f ec{enemy->getPosition()};
+                const sf::Vector2f delta{ec.x - expl.position.x, ec.y - expl.position.y};
+                const float dist = std::sqrt(delta.x * delta.x + delta.y * delta.y);
+                if (dist <= expl.radius) {
+                    enemy->takeDamage(expl.bonusDamage);
+                    std::cout << "[Artifact] Explosive shells dealt " << expl.bonusDamage
+                              << " bonus damage!\n";
+                    triggerShake(6.f);
+                }
+            }
+            for (auto& shooter : shooters) {
+                if (!shooter->isAlive()) continue;
+                const sf::Vector2f sc{shooter->getPosition()};
+                const sf::Vector2f delta2{sc.x - expl.position.x, sc.y - expl.position.y};
+                const float dist2 = std::sqrt(delta2.x * delta2.x + delta2.y * delta2.y);
+                if (dist2 <= expl.radius) {
+                    shooter->takeDamage(expl.bonusDamage);
+                    triggerShake(6.f);
+                }
+            }
+        }
+        explosiveShells.clearExplosions();
+    });
+
     // Top-level state machine
     core::GameState gameState = core::GameState::Playing;
     const sf::Vector2f playerSpawn{1000.f, 1000.f};
@@ -149,6 +204,9 @@ int main() {
         waveManager = core::WaveManager(4.f);
         waveManager.startNextWave();
         shop = core::Shop{};
+        eventBus.reset();
+        vampiricFang.reset();
+        explosiveShells.reset();
         gameState = core::GameState::Playing;
         std::cout << "[Game] Restarted\n";
     };
@@ -156,16 +214,6 @@ int main() {
     // Fixed timestep accumulator
     float accumulator = 0.f;
     sf::Clock gameClock;
-
-    // Screen shake state: magnitude (px) decays toward 0 each frame; offset
-    // is applied to the camera center at render time, then reset for next frame.
-    float shakeMagnitude = 0.f;
-    constexpr float kShakeDecayPerSec = 9.f;
-    constexpr float kShakeMaxMagnitude = 18.f;
-    auto triggerShake = [&](float mag) {
-        shakeMagnitude = std::min(kShakeMaxMagnitude, std::max(shakeMagnitude, mag));
-    };
-    std::uniform_real_distribution<float> shakeDist{-1.f, 1.f};
 
     ui::HUD hud;
 
@@ -259,7 +307,9 @@ int main() {
                                       << enemy->health() << "/" << enemy->maxHealth() << "\n";
                             if (enemy->isDead()) {
                                 std::cout << "[Combat] Chaser killed!\n";
-                                ++killCount;
+                                eventBus.emit(core::EnemyKilledEvent{++killCount});
+                                eventBus.emit(core::AreaDamageRequest{
+                                    enemy->getPosition(), 70.f, 20, player.getPosition()});
                                 triggerShake(7.f);
                                 waveManager.onEnemyKilled();
                                 loot.push_back(std::make_unique<entities::Loot>(
@@ -283,7 +333,9 @@ int main() {
                                       << shooter->health() << "/" << shooter->maxHealth() << "\n";
                             if (shooter->isDead()) {
                                 std::cout << "[Combat] Shooter killed!\n";
-                                ++killCount;
+                                eventBus.emit(core::EnemyKilledEvent{++killCount});
+                                eventBus.emit(core::AreaDamageRequest{
+                                    shooter->getPosition(), 70.f, 20, player.getPosition()});
                                 triggerShake(8.f);
                                 waveManager.onEnemyKilled();
                                 loot.push_back(std::make_unique<entities::Loot>(
@@ -356,6 +408,9 @@ int main() {
                     }
                     if (target->isDead()) {
                         ++killCount;
+                        eventBus.emit(core::EnemyKilledEvent{killCount});
+                        eventBus.emit(core::AreaDamageRequest{
+                            target->getPosition(), 70.f, 20, player.getPosition()});
                         triggerShake(7.f);
                         waveManager.onEnemyKilled();
                         loot.push_back(std::make_unique<entities::Loot>(
