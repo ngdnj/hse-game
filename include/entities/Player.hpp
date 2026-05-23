@@ -63,6 +63,20 @@ class Player final : public Entity {
     /** @brief Снять принудительное состояние и вернуться к run/idle логике. */
     void clearStateOverride();
 
+    // ---- Combat ----
+    /** Perform a melee attack, returns hitbox AABB in world coords. */
+    [[nodiscard]] sf::FloatRect attack() noexcept;
+
+    /** @brief Attack range and damage */
+    void setAttackRange(float range) noexcept { attackRange_ = range; }
+    void setAttackDamage(int dmg) noexcept { attackDamage_ = dmg; }
+    [[nodiscard]] float attackRange() const noexcept { return attackRange_; }
+    [[nodiscard]] int attackDamage() const noexcept { return attackDamage_; }
+    [[nodiscard]] bool isAttacking() const noexcept { return attackCooldown_ > 0.f; }
+
+    /** @brief Current attack hitbox (valid after attack() call). */
+    [[nodiscard]] const sf::FloatRect& attackHitbox() const noexcept { return attackHitbox_; }
+
   protected:
     void onDraw(sf::RenderTarget &target,
                 sf::RenderStates states) const override;
@@ -123,6 +137,13 @@ class Player final : public Entity {
 
     sf::FloatRect movementBounds_;
     float speed_{kDefaultSpeed_};
+
+    // Combat
+    float attackRange_{50.f};
+    int attackDamage_{20};
+    float attackCooldown_{0.f};
+    float attackDuration_{0.25f};
+    sf::FloatRect attackHitbox_;
 
     bool loadSheet(const std::string &name, const std::string &path);
     const Sheet *findSheet(const std::string &name) const;

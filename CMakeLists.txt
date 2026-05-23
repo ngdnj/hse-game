@@ -26,9 +26,17 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(SFML)
 
-file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/main.cpp")
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.cpp")
 
 add_executable(${PROJECT_NAME} ${SOURCES})
+
+# Copy runtime assets next to the binary so relative paths like "assets/player.png"
+# work regardless of the current working directory (e.g. when launching from the
+# build tree or an IDE).
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_SOURCE_DIR}/assets
+                ${CMAKE_BINARY_DIR}/assets)
 
 target_include_directories(${PROJECT_NAME}
         PUBLIC

@@ -1,0 +1,71 @@
+#pragma once
+
+#include "core/Entity.hpp"
+#include "core/ResourceManager.hpp"
+#include <SFML/Graphics.hpp>
+
+namespace entities {
+
+class Enemy final : public Entity {
+public:
+    Enemy(const sf::Vector2f& pos, const sf::Vector2f& size,
+          const sf::FloatRect& worldBounds, core::ResourceManager* res);
+
+    void update(float dt) override;
+    [[nodiscard]] sf::FloatRect getLocalBounds() const override;
+
+    void takeDamage(int amount);
+    [[nodiscard]] int health() const noexcept { return health_; }
+    [[nodiscard]] int maxHealth() const noexcept { return maxHealth_; }
+    [[nodiscard]] bool isDead() const noexcept { return health_ <= 0; }
+
+    void setPlayerPosition(const sf::Vector2f* pos) { playerPos_ = pos; }
+    void setChaseSpeed(float speed) noexcept { chaseSpeed_ = speed; }
+
+protected:
+    void onDraw(sf::RenderTarget& target, sf::RenderStates states) const override;
+
+private:
+    void applyShapeFromDesc();
+
+    const sf::Vector2f* playerPos_{nullptr};
+    sf::FloatRect worldBounds_;
+    core::ResourceManager* res_{nullptr};
+
+    // Shape rendering
+    std::unique_ptr<sf::Shape> shape_;
+
+    // Combat
+    int health_{60};
+    int maxHealth_{60};
+
+    // AI
+    float chaseSpeed_{100.f};
+};
+
+class Loot final : public Entity {
+public:
+    Loot(const sf::Vector2f& pos, std::string itemName, int value = 1);
+
+    void update(float dt) override;
+    [[nodiscard]] sf::FloatRect getLocalBounds() const override;
+
+    [[nodiscard]] const std::string& itemName() const noexcept { return itemName_; }
+    [[nodiscard]] int value() const noexcept { return value_; }
+    [[nodiscard]] bool consumed() const noexcept { return consumed_; }
+
+    void consume() noexcept { consumed_ = true; }
+
+protected:
+    void onDraw(sf::RenderTarget& target, sf::RenderStates states) const override;
+
+private:
+    std::string itemName_;
+    int value_{1};
+    bool consumed_{false};
+
+    // Visual
+    sf::CircleShape circle_;
+};
+
+} // namespace entities
