@@ -1,5 +1,6 @@
 #pragma once
 
+#include <SFML/Graphics/Rect.hpp>
 #include <SFML/System/Vector2.hpp>
 #include <algorithm>
 #include <cstdint>
@@ -77,7 +78,7 @@ public:
     void forceClear() {
         state_.enemiesRemaining = 0;
         state_.waveActive = false;
-        state_.timeSinceWaveCleared = waveBreakDuration_;
+        state_.timeSinceWaveCleared = 0.f;
     }
 
 private:
