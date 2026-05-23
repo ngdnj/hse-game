@@ -78,6 +78,26 @@ void Player::update(float dt) {
     clampToBounds();
 }
 
+void Player::update(float dt, const InputState& input) {
+    if (!isActive()) return;
+
+    // Tick dash state machine
+    if (isDashing_) {
+        dashTimer_ -= dt;
+        if (dashTimer_ <= 0.f) {
+            isDashing_ = false;
+        }
+    }
+    dashCooldownTimer_ = std::max(0.f, dashCooldownTimer_ - dt);
+    flashTimer_ = std::max(0.f, flashTimer_ - dt);
+    slashTimer_ = std::max(0.f, slashTimer_ - dt);
+    if (weapon_) weapon_->update(dt);
+
+    handleInput(dt, input);
+    updateAnimation(dt);
+    clampToBounds();
+}
+
 sf::FloatRect Player::getLocalBounds() const {
     if (hasTexture_ && activeSheet_) {
         const sf::FloatRect spriteBounds = sprite_.getLocalBounds();
@@ -118,6 +138,51 @@ void Player::handleInput(float dt) {
     } else if (hasInput(dir)) {
         const sf::Vector2f norm = normalizeOrZero(dir);
         // Save last direction for dash/attack
+        if (norm.x != 0.f || norm.y != 0.f) lastDir_ = norm;
+        const sf::Vector2f resolved = resolveMove(norm * speed_ * dt);
+        if (resolved.x != 0.f || resolved.y != 0.f) {
+            move(resolved);
+        }
+    }
+
+    isMoving_ = hasInput(dir);
+    updateDirection(dir);
+}
+
+void Player::handleInput(float dt, const InputState& input) {
+    lastInputState_ = input;
+
+    if (!isActive()) return;
+
+    // Tick dash state machine
+    if (isDashing_) {
+        dashTimer_ -= dt;
+        if (dashTimer_ <= 0.f) {
+            isDashing_ = false;
+        }
+    }
+    dashCooldownTimer_ = std::max(0.f, dashCooldownTimer_ - dt);
+    flashTimer_ = std::max(0.f, flashTimer_ - dt);
+    slashTimer_ = std::max(0.f, slashTimer_ - dt);
+    if (weapon_) weapon_->update(dt);
+
+    // Use provided InputState
+    const sf::Vector2f& dir = input.moveDirection;
+    const bool wantsDash = input.dash;
+
+    // Trigger dash if requested and ready
+    if (wantsDash && !isDashing_ && dashCooldownTimer_ <= 0.f) {
+        dash();
+    }
+
+    // While dashing, override movement with dash direction
+    if (isDashing_) {
+        const sf::Vector2f resolved = resolveMove(dashDir_ * dashSpeed_ * dt);
+        if (resolved.x != 0.f || resolved.y != 0.f) {
+            move(resolved);
+        }
+    } else if (hasInput(dir)) {
+        const sf::Vector2f norm = normalizeOrZero(dir);
         if (norm.x != 0.f || norm.y != 0.f) lastDir_ = norm;
         const sf::Vector2f resolved = resolveMove(norm * speed_ * dt);
         if (resolved.x != 0.f || resolved.y != 0.f) {

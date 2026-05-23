@@ -4,6 +4,7 @@
 #include "core/Collision.hpp"
 #include "core/Direction.hpp"
 #include "core/Entity.hpp"
+#include "input/InputState.hpp"
 #include <SFML/Graphics.hpp>
 #include <array>
 #include <memory>
@@ -40,6 +41,8 @@ class Player final : public Entity {
 
     /** @brief Обновляет ввод, анимацию и ограничение по границам. */
     void update(float dt) override;
+    /** @brief Обновление с переданным состоянием ввода (для AI). */
+    void update(float dt, const InputState& input);
 
     /** @brief Локальные границы (коллизия/отрисовка). */
     [[nodiscard]] sf::FloatRect getLocalBounds() const override;
@@ -126,6 +129,8 @@ class Player final : public Entity {
   private:
     /// Обрабатывает клавиатурный ввод и движение.
     void handleInput(float dt);
+    /// Обрабатывает ввод из AI/InputController. Если input == nullptr, читает клавиатуру.
+    void handleInput(float dt, const InputState& input);
 
     /// Продвигает анимацию спрайта по таймеру и состоянию (idle/run/override).
     void updateAnimation(float dt);
@@ -205,6 +210,9 @@ class Player final : public Entity {
 
     // Collision obstacles reference (not owned)
     const std::vector<core::AABB>* obstacles_{nullptr};
+
+    // Last input state from AI/controller
+    InputState lastInputState_ = InputState::idle();
 
     bool loadSheet(const std::string &name, const std::string &path);
     const Sheet *findSheet(const std::string &name) const;

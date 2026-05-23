@@ -6,6 +6,8 @@
 #include <random>
 #include <vector>
 
+#include "ai/GameStateObserver.hpp"
+#include "ai/OllamaClient.hpp"
 #include "core/Collision.hpp"
 #include "core/GameState.hpp"
 #include "core/Inventory.hpp"
@@ -20,6 +22,7 @@
 #include "entities/Enemy.hpp"
 #include "entities/Player.hpp"
 #include "entities/ShooterEnemy.hpp"
+#include "input/AiInputController.hpp"
 #include "input/PlayerInputController.hpp"
 #include "ui/HUD.hpp"
 #include "utils/CliParser.hpp"
@@ -72,7 +75,18 @@ void clampViewToBounds(sf::View& view, const sf::FloatRect& worldBounds) {
 int main(int argc, char* argv[]) {
     CliOptions opts = parseArgs(argc, argv);
 
-    std::unique_ptr<IInputController> controller = std::make_unique<PlayerInputController>();
+    std::unique_ptr<IInputController> controller;
+    std::shared_ptr<OllamaClient> ollamaClient;
+    GameStateObserver stateObserver;
+
+    if (opts.aiEnabled) {
+        ollamaClient = std::make_shared<OllamaClient>(opts.modelName, 0.5f);
+        controller = std::make_unique<AiInputController>(ollamaClient);
+        std::cout << "[AI] Enabled with model: " << opts.modelName << "\n";
+        std::cout << "[AI] Ensure Ollama is running at localhost:11434\n";
+    } else {
+        controller = std::make_unique<PlayerInputController>();
+    }
 
     sf::RenderWindow window(sf::VideoMode({1200u, 800u}), "HSE Game Prototype");
     window.setFramerateLimit(60);
@@ -287,12 +301,14 @@ int main(int argc, char* argv[]) {
         accumulator += realDt;
         int steps = 0;
         while (accumulator >= kFixedDt && steps < kMaxFrameSkip) {
-            // Player
-            player.update(kFixedDt);
+            // Get AI/keyboard input state
+            auto input = controller->poll();
 
-            // Combat: fire active weapon if Space is held and weapon is ready.
-            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space)
-                && player.weapon() && player.weapon()->canFire()) {
+            // Player
+            player.update(kFixedDt, input);
+
+            // Combat: fire active weapon if attack input is true and weapon is ready.
+            if (input.attack && player.weapon() && player.weapon()->canFire()) {
                 auto result = player.tryFire();
                 const float kb = result.knockbackMultiplier;
                 if (result.hasMeleeHitbox) {
@@ -448,6 +464,18 @@ int main(int argc, char* argv[]) {
 
             accumulator -= kFixedDt;
             ++steps;
+        }
+
+        // Send game state to Ollama for AI controller (every 500ms)
+        if (ollamaClient && ollamaClient->isRunning()) {
+            static float lastStateTime = 0.f;
+            lastStateTime += realDt;
+            if (lastStateTime >= 0.5f) {
+                lastStateTime = 0.f;
+                std::string stateJson = stateObserver.serialize(
+                    player, enemies, shooters, playerProjectiles);
+                ollamaClient->sendState(std::move(stateJson));
+            }
         }
 
         // Wave system update
