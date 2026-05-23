@@ -78,6 +78,14 @@ class Player final : public Entity {
     /** @brief Current attack hitbox (valid after attack() call). */
     [[nodiscard]] const sf::FloatRect& attackHitbox() const noexcept { return attackHitbox_; }
 
+    // ---- Health ----
+    void takeDamage(int amount) noexcept;
+    void setMaxHealth(int hp) noexcept;
+    void heal(int amount) noexcept;
+    [[nodiscard]] int health() const noexcept { return health_; }
+    [[nodiscard]] int maxHealth() const noexcept { return maxHealth_; }
+    [[nodiscard]] bool isDead() const noexcept { return health_ <= 0; }
+
     // ---- Dash ----
     void dash() noexcept;
     [[nodiscard]] bool isDashing() const noexcept { return isDashing_; }
@@ -162,6 +170,10 @@ class Player final : public Entity {
     float attackCooldown_{0.f};
     float attackDuration_{0.25f};
     sf::FloatRect attackHitbox_;
+
+    // Health
+    int maxHealth_{100};
+    int health_{100};
 
     // Dash
     bool isDashing_{false};

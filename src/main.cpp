@@ -8,6 +8,7 @@
 #include "core/Collision.hpp"
 #include "core/Inventory.hpp"
 #include "core/ResourceManager.hpp"
+#include "core/Shop.hpp"
 #include "core/WaveManager.hpp"
 #include "entities/Enemy.hpp"
 #include "entities/Player.hpp"
@@ -123,6 +124,10 @@ int main() {
     core::WaveManager waveManager(4.f);
     waveManager.startNextWave();
 
+    // Shop (opens between waves)
+    core::Shop shop;
+    bool shopOpen = false;
+
     // Fixed timestep accumulator
     float accumulator = 0.f;
     sf::Clock gameClock;
@@ -135,15 +140,36 @@ int main() {
             if (eventOpt->is<sf::Event::Closed>()) {
                 window.close();
             }
-            // E key: pickup loot
             if (auto* key = eventOpt->getIf<sf::Event::KeyPressed>()) {
-                if (key->code == sf::Keyboard::Key::E) {
-                    for (auto& l : loot) {
-                        if (!l->consumed() && l->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
-                            std::cout << "[Loot] Picked up: " << l->itemName()
-                                      << " x" << l->value() << "\n";
-                            inventory.addItem(l->itemName(), {.stackSize = l->value()});
-                            l->consume();
+                if (shopOpen) {
+                    // Shop input: 1/2/3 buy, Enter close
+                    auto tryBuy = [&](std::size_t idx) {
+                        if (shop.buy(idx, player, inventory)) {
+                            std::cout << "[Shop] Bought " << shop.at(idx).name
+                                      << " -> lvl " << shop.at(idx).level << "\n";
+                        } else {
+                            std::cout << "[Shop] Cannot buy " << shop.at(idx).name << "\n";
+                        }
+                    };
+                    if (key->code == sf::Keyboard::Key::Num1) tryBuy(0);
+                    else if (key->code == sf::Keyboard::Key::Num2) tryBuy(1);
+                    else if (key->code == sf::Keyboard::Key::Num3) tryBuy(2);
+                    else if (key->code == sf::Keyboard::Key::Enter) {
+                        shopOpen = false;
+                        waveManager.startNextWave();
+                        std::cout << "[Wave] Wave " << waveManager.waveNumber()
+                                  << " started!\n";
+                    }
+                } else {
+                    // E key: pickup loot
+                    if (key->code == sf::Keyboard::Key::E) {
+                        for (auto& l : loot) {
+                            if (!l->consumed() && l->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
+                                std::cout << "[Loot] Picked up: " << l->itemName()
+                                          << " x" << l->value() << "\n";
+                                inventory.addItem(l->itemName(), {.stackSize = l->value()});
+                                l->consume();
+                            }
                         }
                     }
                 }
@@ -154,7 +180,8 @@ int main() {
         const float realDt = gameClock.restart().asSeconds();
         (void)realDt;
 
-        // ---- Fixed update loop ----
+        // ---- Fixed update loop (paused while shop is open) ----
+        if (!shopOpen) {
         accumulator += realDt;
         int steps = 0;
         while (accumulator >= kFixedDt && steps < kMaxFrameSkip) {
@@ -232,7 +259,9 @@ int main() {
             for (auto& shooter : shooters) {
                 for (auto& proj : shooter->projectiles()) {
                     if (!proj->consumed() && proj->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
-                        std::cout << "[Combat] Player hit by projectile!\n";
+                        player.takeDamage(proj->damage());
+                        std::cout << "[Combat] Player hit by projectile! HP: "
+                                  << player.health() << "/" << player.maxHealth() << "\n";
                         proj->markConsumed();
                     }
                 }
@@ -279,6 +308,16 @@ int main() {
                 }
             }
         }
+
+        // Auto-open shop when the wave is fully cleared
+        if (waveManager.waveActive() && waveManager.enemiesRemaining() == 0
+            && enemies.empty() && shooters.empty()) {
+            waveManager.forceClear();
+            shopOpen = true;
+            std::cout << "[Shop] Wave " << waveManager.waveNumber()
+                      << " cleared -- shop opened\n";
+        }
+        } // end if (!shopOpen)
 
         // ---- Deferred removal (dead enemies and consumed loot) ----
         {
@@ -357,8 +396,12 @@ int main() {
         hudState.enemiesRemainingInWave = waveManager.enemiesRemaining();
         hudState.killCount = killCount;
         hudState.lootOnGround = static_cast<int>(loot.size());
+        hudState.playerHealth = player.health();
+        hudState.playerMaxHealth = player.maxHealth();
         hudState.dashCooldownRemaining = player.dashCooldownRemaining();
         hudState.inventory = &inventory;
+        hudState.shopOpen = shopOpen;
+        hudState.shop = &shop;
         hud.draw(window, hudState);
 
         window.display();

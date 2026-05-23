@@ -447,3 +447,20 @@ void Player::dash() noexcept {
 float Player::dashCooldownRemaining() const noexcept {
     return std::max(0.f, dashCooldownTimer_);
 }
+
+void Player::takeDamage(int amount) noexcept {
+    if (amount <= 0) return;
+    health_ = std::max(0, health_ - amount);
+}
+
+void Player::setMaxHealth(int hp) noexcept {
+    const int delta = hp - maxHealth_;
+    maxHealth_ = std::max(1, hp);
+    if (delta > 0) health_ = std::min(maxHealth_, health_ + delta);
+    else health_ = std::min(health_, maxHealth_);
+}
+
+void Player::heal(int amount) noexcept {
+    if (amount <= 0) return;
+    health_ = std::min(maxHealth_, health_ + amount);
+}
