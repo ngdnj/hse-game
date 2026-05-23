@@ -19,6 +19,7 @@ constexpr float kFixedDt = 1.f / 60.f;  // 60 Hz physics
 constexpr int kMaxFrameSkip = 5;        // prevent spiral of death
 constexpr float kSpawnInterval = 3.f;   // seconds between enemy spawns
 constexpr int kMaxEnemies = 8;
+constexpr float kCameraSmoothing = 0.12f; // 0..1, lower = smoother/slower follow
 
 // Simple pseudo-random for spawn positions
 std::mt19937& rng() {
@@ -40,21 +41,41 @@ sf::Vector2f randomEdgePosition(const sf::FloatRect& bounds) {
     }
 }
 
+// Clamp a view center so the view rectangle stays within world bounds
+void clampViewToBounds(sf::View& view, const sf::FloatRect& worldBounds) {
+    const sf::Vector2f halfSize = view.getSize() * 0.5f;
+    const sf::Vector2f minPos = worldBounds.position + halfSize;
+    const sf::Vector2f maxPos{
+        worldBounds.position.x + worldBounds.size.x - halfSize.x,
+        worldBounds.position.y + worldBounds.size.y - halfSize.y
+    };
+    const sf::Vector2f currentCenter = view.getCenter();
+    view.setCenter({
+        std::clamp(currentCenter.x, minPos.x, maxPos.x),
+        std::clamp(currentCenter.y, minPos.y, maxPos.y)
+    });
+}
+
 } // namespace
 
 int main() {
     sf::RenderWindow window(sf::VideoMode({1200u, 800u}), "HSE Game Prototype");
     window.setFramerateLimit(60);
 
-    const sf::Vector2f worldSize{1200.f, 800.f};
+    const sf::Vector2f worldSize{2000.f, 2000.f};
     const sf::FloatRect worldBounds{sf::Vector2f{0.f, 0.f}, worldSize};
+
+    // Camera
+    sf::View camera;
+    camera.setSize({1200.f, 800.f});
+    camera.setCenter({600.f, 400.f});
 
     // Resource manager for shapes
     core::ResourceManager res;
     res.initDefaults();
 
     // Create player (no textures -> uses colored shapes)
-    Player player(sf::Vector2f{40.f, 40.f}, sf::Vector2f{600.f, 400.f},
+    Player player(sf::Vector2f{40.f, 40.f}, sf::Vector2f{1000.f, 1000.f},
                  worldBounds, "", "");
     player.setSpeed(220.f);
     player.setAttackDamage(25);
@@ -198,17 +219,28 @@ int main() {
         // ---- Render ----
         window.clear(sf::Color(20, 24, 32));
 
-        // Grid lines (optional visual)
+        // Set camera view (world space)
+        window.setView(camera);
+
+        // Grid lines spanning the full world
         sf::VertexArray grid(sf::PrimitiveType::Lines);
-        for (float x = 0; x < 1200.f; x += 80.f) {
+        for (float x = 0.f; x <= 2000.f; x += 80.f) {
             grid.append(sf::Vertex{{x, 0.f}, sf::Color(60, 64, 72)});
-            grid.append(sf::Vertex{{x, 800.f}, sf::Color(60, 64, 72)});
+            grid.append(sf::Vertex{{x, 2000.f}, sf::Color(60, 64, 72)});
         }
-        for (float y = 0; y < 800.f; y += 80.f) {
+        for (float y = 0.f; y <= 2000.f; y += 80.f) {
             grid.append(sf::Vertex{{0.f, y}, sf::Color(60, 64, 72)});
-            grid.append(sf::Vertex{{1200.f, y}, sf::Color(60, 64, 72)});
+            grid.append(sf::Vertex{{2000.f, y}, sf::Color(60, 64, 72)});
         }
         window.draw(grid);
+
+        // World boundary outline
+        sf::RectangleShape border{{2000.f, 2000.f}};
+        border.setPosition({0.f, 0.f});
+        border.setFillColor(sf::Color::Transparent);
+        border.setOutlineColor(sf::Color(100, 100, 100));
+        border.setOutlineThickness(4.f);
+        window.draw(border);
 
         // Loot
         for (auto& l : loot) window.draw(*l);
@@ -219,7 +251,9 @@ int main() {
         // Player
         window.draw(player);
 
-        // UI
+        // UI (back to default view so it stays on screen)
+        window.setView(window.getDefaultView());
+
         drawText(window, {10.f, 10.f},
                  "WASD move | SPACE attack | E pick up loot", 16);
         drawText(window, {10.f, 30.f},
@@ -240,6 +274,16 @@ int main() {
         });
 
         window.display();
+
+        // Smooth camera follow
+        const sf::Vector2f targetCenter = player.getPosition();
+        const sf::Vector2f currentCenter = camera.getCenter();
+        const sf::Vector2f newCenter{
+            currentCenter.x + (targetCenter.x - currentCenter.x) * kCameraSmoothing,
+            currentCenter.y + (targetCenter.y - currentCenter.y) * kCameraSmoothing
+        };
+        camera.setCenter(newCenter);
+        clampViewToBounds(camera, worldBounds);
     }
 
     std::cout << "[Game] Shutdown. Kills: " << killCount << "\n";
