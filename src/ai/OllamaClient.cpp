@@ -20,7 +20,8 @@ OllamaClient::~OllamaClient() {
 
 void OllamaClient::sendState(std::string serializedJson) {
     if (!running_.load(std::memory_order_acquire)) return;
-    pendingState_ = serializedJson;  // copy is fine for small JSON payloads
+    std::lock_guard<std::mutex> lock(stateMutex_);
+    pendingState_ = std::move(serializedJson);
     newState_.store(true, std::memory_order_release);
 }
 
@@ -40,14 +41,19 @@ void OllamaClient::runLoop(std::stop_token st) {
         }
 
         auto now = std::chrono::steady_clock::now();
-        if (now - lastQuery_ < std::chrono::duration<float>(queryIntervalSec_)) {
+        auto lastQuery = lastQuery_.load(std::memory_order_acquire);
+        if (now - lastQuery < std::chrono::duration<float>(queryIntervalSec_)) {
             std::this_thread::sleep_for(10ms);
             continue;
         }
-        lastQuery_ = now;
+        lastQuery_.store(now, std::memory_order_release);
 
         newState_.store(false, std::memory_order_release);
-        std::string stateCopy = std::move(pendingState_);
+        std::string stateCopy;
+        {
+            std::lock_guard<std::mutex> lock(stateMutex_);
+            stateCopy = std::move(pendingState_);
+        }
 
         // Build JSON payload
         nlohmann::json payload = {

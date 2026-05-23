@@ -4,6 +4,7 @@
 #include <atomic>
 #include <optional>
 #include <chrono>
+#include <mutex>
 #include "input/InputState.hpp"
 
 class OllamaClient {
@@ -36,5 +37,6 @@ private:
     std::atomic<bool> hasResult_{false};
 
     // Throttle clock
-    std::chrono::steady_clock::time_point lastQuery_;
+    std::atomic<std::chrono::steady_clock::time_point> lastQuery_;
+    std::mutex stateMutex_;
 };
