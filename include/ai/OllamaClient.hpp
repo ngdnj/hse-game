@@ -31,6 +31,7 @@ private:
     // Pending state from game thread
     std::string pendingState_;
     std::atomic<bool> newState_{false};
+    std::atomic<bool> busy_{false};
 
     // Latest parsed result (written by bg thread, read by game thread)
     std::atomic<InputState> latestState_{InputState::idle()};

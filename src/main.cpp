@@ -376,6 +376,17 @@ int main(int argc, char* argv[]) {
                 }
             }
 
+            // Handle weapon swap from AI input
+            if (input.swapWeapon) {
+                if (player.weapon() && player.weapon()->name() == "Sword") {
+                    player.setWeapon(std::make_unique<combat::ShotgunWeapon>());
+                    std::cout << "[AI] Switched to Shotgun\n";
+                } else {
+                    player.setWeapon(std::make_unique<combat::SwordWeapon>(25, 55.f));
+                    std::cout << "[AI] Switched to Sword\n";
+                }
+            }
+
             // Player position reference for enemy AI
             const sf::Vector2f playerPos = player.getPosition();
 

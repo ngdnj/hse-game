@@ -20,6 +20,7 @@ OllamaClient::~OllamaClient() {
 
 void OllamaClient::sendState(std::string serializedJson) {
     if (!running_.load(std::memory_order_acquire)) return;
+    if (busy_.load(std::memory_order_acquire)) return; // drop if still processing
     std::lock_guard<std::mutex> lock(stateMutex_);
     pendingState_ = std::move(serializedJson);
     newState_.store(true, std::memory_order_release);
@@ -49,6 +50,7 @@ void OllamaClient::runLoop(std::stop_token st) {
         lastQuery_.store(now, std::memory_order_release);
 
         newState_.store(false, std::memory_order_release);
+        busy_.store(true, std::memory_order_release);
         std::string stateCopy;
         {
             std::lock_guard<std::mutex> lock(stateMutex_);
@@ -89,11 +91,14 @@ void OllamaClient::runLoop(std::stop_token st) {
 
                 latestState_.store(state, std::memory_order_release);
                 hasResult_.store(true, std::memory_order_release);
+                busy_.store(false, std::memory_order_release);
             }
         } catch (const nlohmann::json::parse_error&) {
             std::cerr << "[Ollama] JSON parse error, keeping last state\n";
+            busy_.store(false, std::memory_order_release);
         } catch (const std::exception& e) {
             std::cerr << "[Ollama] Exception: " << e.what() << "\n";
+            busy_.store(false, std::memory_order_release);
         }
     }
 }
