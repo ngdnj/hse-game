@@ -8,6 +8,7 @@
 #include "core/Collision.hpp"
 #include "core/Inventory.hpp"
 #include "core/ResourceManager.hpp"
+#include "core/WaveManager.hpp"
 #include "entities/Enemy.hpp"
 #include "entities/Player.hpp"
 #include "entities/ShooterEnemy.hpp"
@@ -18,8 +19,6 @@ namespace {
 
 constexpr float kFixedDt = 1.f / 60.f;  // 60 Hz physics
 constexpr int kMaxFrameSkip = 5;        // prevent spiral of death
-constexpr float kSpawnInterval = 3.f;   // seconds between enemy spawns
-constexpr int kMaxEnemies = 8;
 constexpr float kCameraSmoothing = 0.12f; // 0..1, lower = smoother/slower follow
 
 // Simple pseudo-random for spawn positions
@@ -114,8 +113,11 @@ int main() {
     std::vector<std::unique_ptr<entities::ShooterEnemy>> shooters;
     std::vector<std::unique_ptr<entities::Loot>> loot;
 
-    float spawnTimer = 0.f;
     int killCount = 0;
+
+    // Wave system
+    core::WaveManager waveManager(4.f);
+    waveManager.startNextWave();
 
     // Fixed timestep accumulator
     float accumulator = 0.f;
@@ -192,6 +194,7 @@ int main() {
                         if (enemy->isDead()) {
                             std::cout << "[Combat] Chaser killed!\n";
                             ++killCount;
+                            waveManager.onEnemyKilled();
                             loot.push_back(std::make_unique<entities::Loot>(
                                 enemy->getPosition(), "coin", 5));
                         }
@@ -213,6 +216,7 @@ int main() {
                         if (shooter->isDead()) {
                             std::cout << "[Combat] Shooter killed!\n";
                             ++killCount;
+                            waveManager.onEnemyKilled();
                             loot.push_back(std::make_unique<entities::Loot>(
                                 shooter->getPosition(), "coin", 10));
                         }
@@ -261,23 +265,31 @@ int main() {
             ++steps;
         }
 
-        // Spawn enemies: alternate between chasers and shooters
-        spawnTimer += realDt;
-        const bool canSpawnChaser = enemies.size() < kMaxEnemies;
-        const bool canSpawnShooter = shooters.size() < 4;
-        if (spawnTimer >= kSpawnInterval && (canSpawnChaser || canSpawnShooter)) {
-            spawnTimer = 0.f;
-            auto pos = randomEdgePosition(worldBounds);
-            if (canSpawnChaser && ((enemies.size() <= shooters.size()) || !canSpawnShooter)) {
-                enemies.push_back(std::make_unique<entities::Enemy>(
-                    pos, sf::Vector2f{36.f, 36.f}, worldBounds, &res));
-                enemies.back()->setObstacles(&obstacleAABBs);
-                std::cout << "[Spawn] Chaser at (" << pos.x << "," << pos.y << ")\n";
-            } else if (canSpawnShooter) {
-                shooters.push_back(std::make_unique<entities::ShooterEnemy>(
-                    pos, worldBounds, &res));
-                shooters.back()->setObstacles(&obstacleAABBs);
-                std::cout << "[Spawn] Shooter at (" << pos.x << "," << pos.y << ")\n";
+        // Wave system update
+        waveManager.update(realDt);
+        if (waveManager.canStartNextWave()) {
+            waveManager.startNextWave();
+            std::cout << "[Wave] Wave " << waveManager.waveNumber() << " started!\n";
+        }
+
+        // Spawn from wave
+        const int totalAlive = static_cast<int>(enemies.size()) + static_cast<int>(shooters.size());
+        const int toSpawn = waveManager.enemiesToSpawnNow(totalAlive);
+        if (toSpawn > 0) {
+            const auto positions = waveManager.spawnPositions(
+                worldBounds, randomEdgePosition, toSpawn);
+            for (const auto& pos : positions) {
+                if (enemies.size() <= shooters.size()) {
+                    enemies.push_back(std::make_unique<entities::Enemy>(
+                        pos, sf::Vector2f{36.f, 36.f}, worldBounds, &res));
+                    enemies.back()->setObstacles(&obstacleAABBs);
+                    std::cout << "[Spawn] Chaser at (" << pos.x << "," << pos.y << ")\n";
+                } else {
+                    shooters.push_back(std::make_unique<entities::ShooterEnemy>(
+                        pos, worldBounds, &res));
+                    shooters.back()->setObstacles(&obstacleAABBs);
+                    std::cout << "[Spawn] Shooter at (" << pos.x << "," << pos.y << ")\n";
+                }
             }
         }
 
@@ -351,14 +363,21 @@ int main() {
         window.setView(window.getDefaultView());
 
         drawText(window, {10.f, 10.f},
-                 "WASD move | SPACE attack | E pick up loot", 16);
+                 "WASD move | SPACE attack | LShift dash | E pick up loot", 16);
         drawText(window, {10.f, 30.f},
-                 "Enemies: " + std::to_string(enemies.size()) +
+                 "Wave: " + std::to_string(waveManager.waveNumber()) +
+                 " | Enemies: " + std::to_string(enemies.size() + shooters.size()) +
                  " | Kills: " + std::to_string(killCount), 16);
-        drawText(window, {10.f, 50.f},
-                 "Loot in world: " + std::to_string(loot.size()), 16);
+        if (!waveManager.waveActive()) {
+            drawText(window, {10.f, 50.f},
+                     "Next wave in: " + std::to_string(static_cast<int>(waveManager.waveBreakRemaining())) + "s", 16);
+        } else {
+            drawText(window, {10.f, 50.f},
+                     "Enemies left: " + std::to_string(waveManager.enemiesRemaining()), 16);
+        }
         drawText(window, {10.f, 70.f},
-                 "Inventory: " + std::to_string(inventory.usedSlots()) +
+                 "Loot: " + std::to_string(loot.size()) +
+                 " | Inv: " + std::to_string(inventory.usedSlots()) +
                  "/" + std::to_string(inventory.capacity()), 16);
 
         // Print collected inventory
