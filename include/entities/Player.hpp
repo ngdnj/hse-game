@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Collision.hpp"
 #include "core/Direction.hpp"
 #include "core/Entity.hpp"
 #include <SFML/Graphics.hpp>
@@ -77,6 +78,15 @@ class Player final : public Entity {
     /** @brief Current attack hitbox (valid after attack() call). */
     [[nodiscard]] const sf::FloatRect& attackHitbox() const noexcept { return attackHitbox_; }
 
+    /** @brief Provide collision geometry for resolution (nullptr to clear). */
+    void setObstacles(const std::vector<core::AABB>* obstacles) noexcept {
+        obstacles_ = obstacles;
+    }
+
+    /** @brief Resolve a movement intent against stored obstacles and apply it.
+     *  Returns actual movement after slide resolution. */
+    sf::Vector2f resolveMove(sf::Vector2f desired) noexcept;
+
   protected:
     void onDraw(sf::RenderTarget &target,
                 sf::RenderStates states) const override;
@@ -144,6 +154,9 @@ class Player final : public Entity {
     float attackCooldown_{0.f};
     float attackDuration_{0.25f};
     sf::FloatRect attackHitbox_;
+
+    // Collision obstacles reference (not owned)
+    const std::vector<core::AABB>* obstacles_{nullptr};
 
     bool loadSheet(const std::string &name, const std::string &path);
     const Sheet *findSheet(const std::string &name) const;

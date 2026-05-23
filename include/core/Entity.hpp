@@ -127,6 +127,18 @@ public:
     return this->getGlobalBounds().contains(point);
   }
 
+  /**
+   * @brief Apply a resolved movement delta to the entity position,
+   *        respecting world bounds.
+   *
+   * @param delta Movement vector from collision resolver (already computed).
+   */
+  void applyResolvedMovement(sf::Vector2f delta) {
+    sf::Vector2f pos = getPosition();
+    pos += delta;
+    setPosition(pos);
+  }
+
 protected:
   /**
    * @brief Внутренний метод отрисовки, реализованный в подклассе.

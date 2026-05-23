@@ -84,6 +84,30 @@ int main() {
     // Inventory
     core::Inventory inventory(20);
 
+    // Static obstacles (declaration before setup)
+    std::vector<std::unique_ptr<core::Obstacle>> obstacles;
+    std::vector<core::AABB> obstacleAABBs;
+
+    // ---- Static obstacles ----
+    const auto obstacleColor = sf::Color(80, 100, 80);
+    const auto obstacleOutline = sf::Color(50, 60, 50);
+    const auto addObs = [&](int id, float x, float y, float w, float h) {
+        obstacles.push_back(std::make_unique<core::Obstacle>(core::ObstacleDesc{
+            id, {x, y}, {w, h}, obstacleColor, obstacleOutline, 2.f}));
+        obstacleAABBs.push_back(obstacles.back()->getAABB());
+    };
+    // Scattered rocks/walls
+    addObs(1, 400.f, 300.f, 80.f, 40.f);
+    addObs(2, 600.f, 500.f, 120.f, 40.f);
+    addObs(3, 900.f, 200.f, 60.f, 80.f);
+    addObs(4, 1400.f, 600.f, 100.f, 50.f);
+    addObs(5, 300.f, 800.f, 70.f, 70.f);
+    addObs(6, 1100.f, 1100.f, 90.f, 40.f);
+    addObs(7, 1600.f, 400.f, 50.f, 100.f);
+    addObs(8, 700.f, 1400.f, 80.f, 60.f);
+    // Feed obstacles to entities
+    player.setObstacles(&obstacleAABBs);
+
     // Game state
     std::vector<std::unique_ptr<entities::Enemy>> enemies;
     std::vector<std::unique_ptr<entities::Loot>> loot;
@@ -197,6 +221,7 @@ int main() {
             auto pos = randomEdgePosition(worldBounds);
             enemies.push_back(std::make_unique<entities::Enemy>(
                 pos, sf::Vector2f{36.f, 36.f}, worldBounds, &res));
+            enemies.back()->setObstacles(&obstacleAABBs);
             std::cout << "[Spawn] New enemy at (" << pos.x << "," << pos.y << ")\n";
         }
 
@@ -241,6 +266,11 @@ int main() {
         border.setOutlineColor(sf::Color(100, 100, 100));
         border.setOutlineThickness(4.f);
         window.draw(border);
+
+        // Static obstacles
+        for (const auto& obs : obstacles) {
+            obs->draw(window, sf::RenderStates::Default);
+        }
 
         // Loot
         for (auto& l : loot) window.draw(*l);
