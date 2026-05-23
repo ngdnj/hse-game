@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Inventory.hpp"
+#include "core/Shop.hpp"
 #include <SFML/Graphics.hpp>
 #include <string>
 
@@ -17,10 +18,16 @@ struct HudState {
     int killCount{0};
     int lootOnGround{0};
 
+    int playerHealth{100};
+    int playerMaxHealth{100};
+
     float dashCooldownRemaining{0.f};
     float dashCooldownTotal{1.5f};
 
     const core::Inventory* inventory{nullptr}; // not owned
+
+    bool shopOpen{false};
+    const core::Shop* shop{nullptr}; // not owned
 };
 
 class HUD {
@@ -38,6 +45,9 @@ private:
                   const std::string& str, unsigned size = 16) const;
     void drawDashCooldown(sf::RenderTarget& target, sf::Vector2f pos,
                           float remaining, float total) const;
+    void drawHealthBar(sf::RenderTarget& target, sf::Vector2f pos,
+                       int hp, int maxHp) const;
+    void drawShopOverlay(sf::RenderTarget& target, const HudState& state) const;
 
     sf::Font font_;
     bool hasFont_{false};
