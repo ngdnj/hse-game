@@ -49,7 +49,7 @@ target_include_directories(${PROJECT_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE Catch2::Catch2WithMain SFML::System project_options)
+target_link_libraries(${PROJECT_NAME} PRIVATE Catch2::Catch2WithMain SFML::Graphics SFML::System project_options)
 
 include(CTest)
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
