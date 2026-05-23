@@ -1,8 +1,10 @@
 #pragma once
 
-#include <vector>
-#include <array>
+#include <SFML/System/Vector2.hpp>
+#include <algorithm>
 #include <cstddef>
+#include <string>
+#include <vector>
 
 namespace core {
 
@@ -20,6 +22,8 @@ public:
 
     // Returns true if item was added (stacked or placed in empty slot)
     bool addItem(std::string name, ItemData data = {}) {
+        if (name.empty()) return false;
+
         // Try to stack first
         if (data.stackSize > 1) {
             for (auto& slot : slots_) {
