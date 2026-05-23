@@ -26,6 +26,24 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(SFML)
 
+FetchContent_Declare(
+        httplib
+        GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+        GIT_TAG v0.18.1
+        GIT_SHALLOW ON
+        EXCLUDE_FROM_ALL SYSTEM
+)
+FetchContent_MakeAvailable(httplib)
+
+FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.12.0
+        GIT_SHALLOW ON
+        EXCLUDE_FROM_ALL SYSTEM
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.cpp")
 
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -41,6 +59,9 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 target_include_directories(${PROJECT_NAME}
         PUBLIC
         ${CMAKE_SOURCE_DIR}/include
+        SYSTEM
+        ${httplib_SOURCE_DIR}/single_include
+        ${nlohmann_json_SOURCE_DIR}/single_include
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE SFML::Graphics SFML::Window SFML::System project_options)
