@@ -36,17 +36,38 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(Catch2)
 
+include(FetchContent)
+FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.12.0
+        GIT_SHALLOW ON
+        EXCLUDE_FROM_ALL SYSTEM
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
 enable_testing()
 
 file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
 )
 
-add_executable(${PROJECT_NAME} ${TEST_SOURCES})
+file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/ai/GameStateObserver.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/combat/SwordWeapon.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/combat/ShotgunWeapon.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/entities/Player.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/entities/Projectile.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/entities/Enemy.cpp"
+)
+
+add_executable(${PROJECT_NAME} ${TEST_SOURCES} ${GAME_SOURCES})
 
 target_include_directories(${PROJECT_NAME}
         PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        SYSTEM
+        ${nlohmann_json_SOURCE_DIR}/single_include
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE Catch2::Catch2WithMain SFML::Graphics SFML::System project_options)
