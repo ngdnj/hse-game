@@ -1,6 +1,7 @@
 #include <SFML/Graphics.hpp>
 #include <array>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <random>
 #include <vector>
@@ -19,7 +20,9 @@
 #include "entities/Enemy.hpp"
 #include "entities/Player.hpp"
 #include "entities/ShooterEnemy.hpp"
+#include "input/PlayerInputController.hpp"
 #include "ui/HUD.hpp"
+#include "utils/CliParser.hpp"
 
 using namespace entities;
 
@@ -66,7 +69,11 @@ void clampViewToBounds(sf::View& view, const sf::FloatRect& worldBounds) {
 
 } // namespace
 
-int main() {
+int main(int argc, char* argv[]) {
+    CliOptions opts = parseArgs(argc, argv);
+
+    std::unique_ptr<IInputController> controller = std::make_unique<PlayerInputController>();
+
     sf::RenderWindow window(sf::VideoMode({1200u, 800u}), "HSE Game Prototype");
     window.setFramerateLimit(60);
 
