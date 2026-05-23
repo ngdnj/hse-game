@@ -78,6 +78,14 @@ class Player final : public Entity {
     /** @brief Current attack hitbox (valid after attack() call). */
     [[nodiscard]] const sf::FloatRect& attackHitbox() const noexcept { return attackHitbox_; }
 
+    // ---- Dash ----
+    void dash() noexcept;
+    [[nodiscard]] bool isDashing() const noexcept { return isDashing_; }
+    [[nodiscard]] float dashCooldownRemaining() const noexcept;
+    void setDashSpeed(float s) noexcept { dashSpeed_ = s; }
+    void setDashDuration(float d) noexcept { dashDuration_ = d; }
+    void setDashCooldown(float c) noexcept { dashCooldownDuration_ = c; }
+
     /** @brief Provide collision geometry for resolution (nullptr to clear). */
     void setObstacles(const std::vector<core::AABB>* obstacles) noexcept {
         obstacles_ = obstacles;
@@ -154,6 +162,15 @@ class Player final : public Entity {
     float attackCooldown_{0.f};
     float attackDuration_{0.25f};
     sf::FloatRect attackHitbox_;
+
+    // Dash
+    bool isDashing_{false};
+    float dashTimer_{0.f};
+    float dashDuration_{0.2f};
+    float dashCooldownDuration_{1.5f};
+    float dashCooldownTimer_{0.f};
+    float dashSpeed_{600.f};
+    sf::Vector2f dashDir_{1.f, 0.f};
 
     // Collision obstacles reference (not owned)
     const std::vector<core::AABB>* obstacles_{nullptr};

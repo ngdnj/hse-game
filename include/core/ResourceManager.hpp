@@ -64,6 +64,13 @@ public:
             .outlineThickness = 1.f,
             .radius = 10.f
         });
+        registerShape("shooter", ShapeDesc{
+            .type = ShapeDesc::Type::Rectangle,
+            .size = {32.f, 32.f},
+            .fillColor = sf::Color(150, 80, 200),
+            .outlineColor = sf::Color::White,
+            .outlineThickness = 1.f
+        });
     }
 
     // Build an sf::Shape from a ShapeDesc (for rendering)
