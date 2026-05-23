@@ -2,6 +2,7 @@
 
 #include "core/Entity.hpp"
 #include <SFML/Graphics.hpp>
+#include <deque>
 
 namespace entities {
 
@@ -19,10 +20,15 @@ protected:
     void onDraw(sf::RenderTarget& target, sf::RenderStates states) const override;
 
 private:
+    static constexpr float kRadius{8.f};
+    static constexpr std::size_t kTrailLength{8};
+
     int damage_{10};
     bool consumed_{false};
     sf::Vector2f velocity_{0.f, 0.f};
-    sf::CircleShape circle_;
+    sf::CircleShape core_;
+    sf::CircleShape glow_;
+    std::deque<sf::Vector2f> trail_;
 };
 
 } // namespace entities

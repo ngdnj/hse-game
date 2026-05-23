@@ -60,6 +60,10 @@ void HUD::draw(sf::RenderTarget& target, const HudState& state) const {
     if (state.shopOpen) {
         drawShopOverlay(target, state);
     }
+
+    if (state.isGameOver) {
+        drawGameOver(target);
+    }
 }
 
 void HUD::drawText(sf::RenderTarget& target, sf::Vector2f pos,
@@ -163,6 +167,52 @@ void HUD::drawShopOverlay(sf::RenderTarget& target, const HudState& state) const
 
     drawText(target, {panelPos.x + 16.f, panelPos.y + panelSize.y - 28.f},
              "Press 1/2/3 to buy   ENTER to continue", 14);
+}
+
+void HUD::drawGameOver(sf::RenderTarget& target) const {
+    const sf::Vector2u winSz = target.getSize();
+    const auto winW = static_cast<float>(winSz.x);
+    const auto winH = static_cast<float>(winSz.y);
+
+    sf::RectangleShape dim({winW, winH});
+    dim.setFillColor(sf::Color(0, 0, 0, 200));
+    target.draw(dim);
+
+    const sf::Vector2f panelSize{420.f, 160.f};
+    const sf::Vector2f panelPos{
+        (winW - panelSize.x) * 0.5f,
+        (winH - panelSize.y) * 0.5f};
+
+    sf::RectangleShape panel(panelSize);
+    panel.setPosition(panelPos);
+    panel.setFillColor(sf::Color(40, 14, 14));
+    panel.setOutlineColor(sf::Color(220, 60, 60));
+    panel.setOutlineThickness(3.f);
+    target.draw(panel);
+
+    if (!hasFont_) return;
+
+    sf::Text title(font_, sf::String("GAME OVER"), 48);
+    title.setFillColor(sf::Color(240, 80, 80));
+    title.setOutlineColor(sf::Color::Black);
+    title.setOutlineThickness(2.f);
+    const auto titleBounds = title.getLocalBounds();
+    title.setPosition({
+        panelPos.x + (panelSize.x - titleBounds.size.x) * 0.5f - titleBounds.position.x,
+        panelPos.y + 24.f
+    });
+    target.draw(title);
+
+    sf::Text prompt(font_, sf::String("Press R to restart"), 20);
+    prompt.setFillColor(sf::Color::White);
+    prompt.setOutlineColor(sf::Color::Black);
+    prompt.setOutlineThickness(1.f);
+    const auto promptBounds = prompt.getLocalBounds();
+    prompt.setPosition({
+        panelPos.x + (panelSize.x - promptBounds.size.x) * 0.5f - promptBounds.position.x,
+        panelPos.y + panelSize.y - 50.f
+    });
+    target.draw(prompt);
 }
 
 } // namespace ui

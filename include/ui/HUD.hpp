@@ -28,6 +28,8 @@ struct HudState {
 
     bool shopOpen{false};
     const core::Shop* shop{nullptr}; // not owned
+
+    bool isGameOver{false};
 };
 
 class HUD {
@@ -48,6 +50,7 @@ private:
     void drawHealthBar(sf::RenderTarget& target, sf::Vector2f pos,
                        int hp, int maxHp) const;
     void drawShopOverlay(sf::RenderTarget& target, const HudState& state) const;
+    void drawGameOver(sf::RenderTarget& target) const;
 
     sf::Font font_;
     bool hasFont_{false};

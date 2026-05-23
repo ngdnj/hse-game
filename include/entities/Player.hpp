@@ -86,6 +86,11 @@ class Player final : public Entity {
     [[nodiscard]] int maxHealth() const noexcept { return maxHealth_; }
     [[nodiscard]] bool isDead() const noexcept { return health_ <= 0; }
 
+    // ---- Lifecycle ----
+    /** Reset combat/dash state and position. Keeps loaded textures and
+     *  movement bounds. Used by the game-over restart flow. */
+    void reset(const sf::Vector2f& startPosition) noexcept;
+
     // ---- Dash ----
     void dash() noexcept;
     [[nodiscard]] bool isDashing() const noexcept { return isDashing_; }

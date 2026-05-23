@@ -464,3 +464,13 @@ void Player::heal(int amount) noexcept {
     if (amount <= 0) return;
     health_ = std::min(maxHealth_, health_ + amount);
 }
+
+void Player::reset(const sf::Vector2f& startPosition) noexcept {
+    setPosition(startPosition);
+    health_ = maxHealth_;
+    attackCooldown_ = 0.f;
+    isDashing_ = false;
+    dashTimer_ = 0.f;
+    dashCooldownTimer_ = 0.f;
+    lastDir_ = {1.f, 0.f};
+}
