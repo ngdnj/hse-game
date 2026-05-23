@@ -60,7 +60,7 @@ target_include_directories(${PROJECT_NAME}
         PUBLIC
         ${CMAKE_SOURCE_DIR}/include
         SYSTEM
-        ${httplib_SOURCE_DIR}/single_include
+        ${httplib_SOURCE_DIR}
         ${nlohmann_json_SOURCE_DIR}/single_include
 )
 
