@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "core/Collision.hpp"
+#include "core/GameState.hpp"
 #include "core/Inventory.hpp"
 #include "core/ResourceManager.hpp"
 #include "core/Shop.hpp"
@@ -126,7 +127,27 @@ int main() {
 
     // Shop (opens between waves)
     core::Shop shop;
-    bool shopOpen = false;
+
+    // Top-level state machine
+    core::GameState gameState = core::GameState::Playing;
+    const sf::Vector2f playerSpawn{1000.f, 1000.f};
+
+    // Full game reset (used on game over -> R). Keeps loaded sprite atlases.
+    auto resetGame = [&]() {
+        player.reset(playerSpawn);
+        player.setSpeed(220.f);
+        player.setAttackDamage(25);
+        enemies.clear();
+        shooters.clear();
+        loot.clear();
+        inventory = core::Inventory(20);
+        killCount = 0;
+        waveManager = core::WaveManager(4.f);
+        waveManager.startNextWave();
+        shop = core::Shop{};
+        gameState = core::GameState::Playing;
+        std::cout << "[Game] Restarted\n";
+    };
 
     // Fixed timestep accumulator
     float accumulator = 0.f;
@@ -141,7 +162,7 @@ int main() {
                 window.close();
             }
             if (auto* key = eventOpt->getIf<sf::Event::KeyPressed>()) {
-                if (shopOpen) {
+                if (gameState == core::GameState::Shop) {
                     // Shop input: 1/2/3 buy, Enter close
                     auto tryBuy = [&](std::size_t idx) {
                         if (shop.buy(idx, player, inventory)) {
@@ -155,13 +176,17 @@ int main() {
                     else if (key->code == sf::Keyboard::Key::Num2) tryBuy(1);
                     else if (key->code == sf::Keyboard::Key::Num3) tryBuy(2);
                     else if (key->code == sf::Keyboard::Key::Enter) {
-                        shopOpen = false;
+                        gameState = core::GameState::Playing;
                         waveManager.startNextWave();
                         std::cout << "[Wave] Wave " << waveManager.waveNumber()
                                   << " started!\n";
                     }
+                } else if (gameState == core::GameState::GameOver) {
+                    if (key->code == sf::Keyboard::Key::R) {
+                        resetGame();
+                    }
                 } else {
-                    // E key: pickup loot
+                    // Playing: E key to pick up loot
                     if (key->code == sf::Keyboard::Key::E) {
                         for (auto& l : loot) {
                             if (!l->consumed() && l->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
@@ -180,8 +205,8 @@ int main() {
         const float realDt = gameClock.restart().asSeconds();
         (void)realDt;
 
-        // ---- Fixed update loop (paused while shop is open) ----
-        if (!shopOpen) {
+        // ---- Fixed update loop (paused unless Playing) ----
+        if (gameState == core::GameState::Playing) {
         accumulator += realDt;
         int steps = 0;
         while (accumulator >= kFixedDt && steps < kMaxFrameSkip) {
@@ -263,6 +288,10 @@ int main() {
                         std::cout << "[Combat] Player hit by projectile! HP: "
                                   << player.health() << "/" << player.maxHealth() << "\n";
                         proj->markConsumed();
+                        if (player.isDead()) {
+                            gameState = core::GameState::GameOver;
+                            std::cout << "[Game] Player died -- GAME OVER\n";
+                        }
                     }
                 }
             }
@@ -313,11 +342,11 @@ int main() {
         if (waveManager.waveActive() && waveManager.enemiesRemaining() == 0
             && enemies.empty() && shooters.empty()) {
             waveManager.forceClear();
-            shopOpen = true;
+            gameState = core::GameState::Shop;
             std::cout << "[Shop] Wave " << waveManager.waveNumber()
                       << " cleared -- shop opened\n";
         }
-        } // end if (!shopOpen)
+        } // end if (gameState == Playing)
 
         // ---- Deferred removal (dead enemies and consumed loot) ----
         {
@@ -400,8 +429,9 @@ int main() {
         hudState.playerMaxHealth = player.maxHealth();
         hudState.dashCooldownRemaining = player.dashCooldownRemaining();
         hudState.inventory = &inventory;
-        hudState.shopOpen = shopOpen;
+        hudState.shopOpen = (gameState == core::GameState::Shop);
         hudState.shop = &shop;
+        hudState.isGameOver = (gameState == core::GameState::GameOver);
         hud.draw(window, hudState);
 
         window.display();
