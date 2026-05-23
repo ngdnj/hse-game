@@ -74,9 +74,12 @@ int main() {
     core::ResourceManager res;
     res.initDefaults();
 
-    // Create player (no textures -> uses colored shapes)
+    // Create player with sprite atlases (gracefully falls back to colored
+    // rectangle if textures fail to load — see Player ctor).
     Player player(sf::Vector2f{40.f, 40.f}, sf::Vector2f{1000.f, 1000.f},
-                 worldBounds, "", "");
+                 worldBounds,
+                 "assets/player/run.png",
+                 "assets/player/idle.png");
     player.setSpeed(220.f);
     player.setAttackDamage(25);
     player.setAttackRange(55.f);
