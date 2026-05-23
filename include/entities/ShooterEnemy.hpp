@@ -53,6 +53,10 @@ private:
     int health_{80};
     int maxHealth_{80};
 
+    // Damage flash
+    float flashTimer_{0.f};
+    static constexpr float kFlashDuration_{0.15f};
+
     float chaseSpeed_{70.f};
     const std::vector<core::AABB>* obstacles_{nullptr};
     sf::Vector2f knockbackVel_{0.f, 0.f};

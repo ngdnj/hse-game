@@ -53,6 +53,8 @@ FloatRect Enemy::getLocalBounds() const {
 void Enemy::update(float dt) {
     if (!isActive() || isDead()) return;
 
+    flashTimer_ = std::max(0.f, flashTimer_ - dt);
+
     // Apply and dampen knockback velocity
     if (knockbackVel_.x != 0.f || knockbackVel_.y != 0.f) {
         const Vector2f resolvedKb = resolveMove(knockbackVel_ * dt);
@@ -100,6 +102,7 @@ void Enemy::update(float dt) {
 
 void Enemy::takeDamage(int amount) {
     health_ = std::max(0, health_ - amount);
+    flashTimer_ = kFlashDuration_;
     if (isDead()) markForRemoval();
 }
 
@@ -113,7 +116,16 @@ sf::Vector2f Enemy::resolveMove(sf::Vector2f desired) noexcept {
 }
 
 void Enemy::onDraw(sf::RenderTarget& target, sf::RenderStates states) const {
-    if (shape_) target.draw(*shape_, states);
+    if (shape_) {
+        if (flashTimer_ > 0.f) {
+            const Color savedFill = shape_->getFillColor();
+            shape_->setFillColor(Color(255, 240, 240));
+            target.draw(*shape_, states);
+            shape_->setFillColor(savedFill);
+        } else {
+            target.draw(*shape_, states);
+        }
+    }
 
     // Health bar above enemy
     const float barW = 40.f;

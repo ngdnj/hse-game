@@ -175,10 +175,15 @@ class Player final : public Entity {
     float attackCooldown_{0.f};
     float attackDuration_{0.25f};
     sf::FloatRect attackHitbox_;
+    static constexpr float kSlashVisibleDuration_{0.12f};
 
     // Health
     int maxHealth_{100};
     int health_{100};
+
+    // Damage flash
+    float flashTimer_{0.f};
+    static constexpr float kFlashDuration_{0.18f};
 
     // Dash
     bool isDashing_{false};
@@ -197,4 +202,5 @@ class Player final : public Entity {
     int rowIndexFor(DirectionSector sector) const;
     void applySheet(const Sheet &sheet);
     void applyFrame(const Sheet &sheet, int col, int row);
+    void drawSlash(sf::RenderTarget &target, sf::RenderStates states) const;
 };
