@@ -1,10 +1,12 @@
 #pragma once
 
+#include "combat/Weapon.hpp"
 #include "core/Collision.hpp"
 #include "core/Direction.hpp"
 #include "core/Entity.hpp"
 #include <SFML/Graphics.hpp>
 #include <array>
+#include <memory>
 #include <string>
 #include <unordered_map>
 
@@ -65,18 +67,27 @@ class Player final : public Entity {
     void clearStateOverride();
 
     // ---- Combat ----
-    /** Perform a melee attack, returns hitbox AABB in world coords. */
-    [[nodiscard]] sf::FloatRect attack() noexcept;
+    /// Try to fire the currently equipped weapon. Returns the result for the
+    /// game loop to translate into gameplay effects. Empty result (no melee
+    /// hitbox, no projectiles) if the weapon is on cooldown.
+    [[nodiscard]] combat::AttackResult tryFire() noexcept;
 
-    /** @brief Attack range and damage */
-    void setAttackRange(float range) noexcept { attackRange_ = range; }
-    void setAttackDamage(int dmg) noexcept { attackDamage_ = dmg; }
-    [[nodiscard]] float attackRange() const noexcept { return attackRange_; }
-    [[nodiscard]] int attackDamage() const noexcept { return attackDamage_; }
-    [[nodiscard]] bool isAttacking() const noexcept { return attackCooldown_ > 0.f; }
+    /// Replace the equipped weapon. nullptr resets to a default Sword.
+    void setWeapon(std::unique_ptr<combat::Weapon> weapon) noexcept;
 
-    /** @brief Current attack hitbox (valid after attack() call). */
-    [[nodiscard]] const sf::FloatRect& attackHitbox() const noexcept { return attackHitbox_; }
+    [[nodiscard]] combat::Weapon* weapon() noexcept { return weapon_.get(); }
+    [[nodiscard]] const combat::Weapon* weapon() const noexcept { return weapon_.get(); }
+
+    /// Convenience accessors that forward to the active weapon.
+    void setAttackDamage(int dmg) noexcept;
+    [[nodiscard]] int attackDamage() const noexcept;
+
+    /// Sword-only setter. No-op for other weapon types.
+    void setAttackRange(float range) noexcept;
+    [[nodiscard]] float attackRange() const noexcept;
+
+    /// True briefly after a melee swing — drives the slash arc visual.
+    [[nodiscard]] bool isAttacking() const noexcept { return slashTimer_ > 0.f; }
 
     // ---- Health ----
     void takeDamage(int amount) noexcept;
@@ -170,11 +181,9 @@ class Player final : public Entity {
     float speed_{kDefaultSpeed_};
 
     // Combat
-    float attackRange_{50.f};
-    int attackDamage_{20};
-    float attackCooldown_{0.f};
-    float attackDuration_{0.25f};
-    sf::FloatRect attackHitbox_;
+    std::unique_ptr<combat::Weapon> weapon_;
+    float slashTimer_{0.f};
+    float slashRange_{55.f};
     static constexpr float kSlashVisibleDuration_{0.12f};
 
     // Health

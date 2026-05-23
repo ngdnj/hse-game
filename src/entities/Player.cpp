@@ -1,4 +1,5 @@
 #include "entities/Player.hpp"
+#include "combat/SwordWeapon.hpp"
 #include "core/Collision.hpp"
 #include <SFML/Window/Keyboard.hpp>
 #include <algorithm>
@@ -37,7 +38,9 @@ Player::Player(const sf::Vector2f &size, const sf::Vector2f &startPosition,
                const sf::FloatRect &movementBounds,
                const std::string &moveTexturePath,
                const std::string &idleTexturePath)
-    : sprite_(placeholderTexture_), movementBounds_(movementBounds) {
+    : sprite_(placeholderTexture_),
+      movementBounds_(movementBounds),
+      weapon_(std::make_unique<combat::SwordWeapon>()) {
     shape_.setSize(size);
     shape_.setFillColor(sf::Color(100, 200, 250));
     shape_.setOutlineColor(sf::Color::White);
@@ -67,6 +70,8 @@ void Player::update(float dt) {
     }
     dashCooldownTimer_ = std::max(0.f, dashCooldownTimer_ - dt);
     flashTimer_ = std::max(0.f, flashTimer_ - dt);
+    slashTimer_ = std::max(0.f, slashTimer_ - dt);
+    if (weapon_) weapon_->update(dt);
 
     handleInput(dt);
     updateAnimation(dt);
@@ -122,12 +127,6 @@ void Player::handleInput(float dt) {
 
     isMoving_ = hasInput(dir);
     updateDirection(dir);
-
-    // Attack input (Space key)
-    attackCooldown_ = std::max(0.f, attackCooldown_ - dt);
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space) && attackCooldown_ <= 0.f) {
-        (void)attack();
-    }
 }
 
 void Player::updateAnimation(float dt) {
@@ -228,24 +227,47 @@ void Player::clampToBounds() {
     setPosition(pos);
 }
 
-sf::FloatRect Player::attack() noexcept {
-    attackCooldown_ = attackDuration_;
-
-    const auto pos = getPosition();
-    sf::Vector2f dir{1.f, 0.f};
-    if (lastDir_.x != 0.f || lastDir_.y != 0.f) {
-        dir = normalizeOrZero(lastDir_);
+combat::AttackResult Player::tryFire() noexcept {
+    if (!weapon_) return {};
+    const sf::Vector2f dir = (lastDir_.x == 0.f && lastDir_.y == 0.f)
+                                 ? sf::Vector2f{1.f, 0.f}
+                                 : lastDir_;
+    auto result = weapon_->fire(getPosition(), dir);
+    if (result.hasMeleeHitbox) {
+        slashTimer_ = kSlashVisibleDuration_;
+        const auto& hb = result.meleeHitbox;
+        slashRange_ = std::max(hb.size.x, hb.size.y);
     }
+    return result;
+}
 
-    const float halfW = attackRange_ * 0.5f;
-    const float halfH = 30.f;
-    const sf::Vector2f centerOffset = dir * attackRange_ * 0.5f;
+void Player::setWeapon(std::unique_ptr<combat::Weapon> weapon) noexcept {
+    if (weapon) {
+        weapon_ = std::move(weapon);
+    } else {
+        weapon_ = std::make_unique<combat::SwordWeapon>();
+    }
+}
 
-    attackHitbox_ = sf::FloatRect{
-        sf::Vector2f{pos.x + centerOffset.x - halfW, pos.y + centerOffset.y - halfH},
-        sf::Vector2f{attackRange_, halfH * 2.f}
-    };
-    return attackHitbox_;
+void Player::setAttackDamage(int dmg) noexcept {
+    if (weapon_) weapon_->setDamage(dmg);
+}
+
+int Player::attackDamage() const noexcept {
+    return weapon_ ? weapon_->damage() : 0;
+}
+
+void Player::setAttackRange(float range) noexcept {
+    auto* sword = dynamic_cast<combat::SwordWeapon*>(weapon_.get());
+    if (sword) {
+        sword->setRange(range);
+        slashRange_ = range;
+    }
+}
+
+float Player::attackRange() const noexcept {
+    const auto* sword = dynamic_cast<const combat::SwordWeapon*>(weapon_.get());
+    return sword ? sword->range() : 0.f;
 }
 
 void Player::onDraw(sf::RenderTarget &target, sf::RenderStates states) const {
@@ -273,7 +295,7 @@ void Player::onDraw(sf::RenderTarget &target, sf::RenderStates states) const {
     }
 
     // Attack slash arc — visible briefly after attack starts.
-    if (attackCooldown_ > attackDuration_ - kSlashVisibleDuration_) {
+    if (slashTimer_ > 0.f) {
         drawSlash(target, states);
     }
 }
@@ -281,16 +303,14 @@ void Player::onDraw(sf::RenderTarget &target, sf::RenderStates states) const {
 void Player::drawSlash(sf::RenderTarget &target, sf::RenderStates states) const {
     (void)states;
     if (lastDir_.x == 0.f && lastDir_.y == 0.f) return;
+    if (slashTimer_ <= 0.f) return;
 
-    // How far into the slash visibility window we are: 1.0 just after attack
-    // started, decaying to 0.0 at the end of the visible window.
-    const float remaining = attackCooldown_ - (attackDuration_ - kSlashVisibleDuration_);
-    if (remaining <= 0.f) return;
-    const float t = std::clamp(remaining / kSlashVisibleDuration_, 0.f, 1.f);
+    // 1.0 just after swing started, decays to 0.0 at end of visible window.
+    const float t = std::clamp(slashTimer_ / kSlashVisibleDuration_, 0.f, 1.f);
 
     const float baseAngle = std::atan2(lastDir_.y, lastDir_.x);
     const float arcHalfAngle = std::numbers::pi_v<float> / 3.f; // 60° to each side
-    const float radius = attackRange_;
+    const float radius = slashRange_;
     constexpr int kSegments = 16;
 
     sf::VertexArray fan(sf::PrimitiveType::TriangleFan, kSegments + 2);
@@ -525,10 +545,10 @@ void Player::heal(int amount) noexcept {
 void Player::reset(const sf::Vector2f& startPosition) noexcept {
     setPosition(startPosition);
     health_ = maxHealth_;
-    attackCooldown_ = 0.f;
     isDashing_ = false;
     dashTimer_ = 0.f;
     dashCooldownTimer_ = 0.f;
     flashTimer_ = 0.f;
+    slashTimer_ = 0.f;
     lastDir_ = {1.f, 0.f};
 }
