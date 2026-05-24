@@ -4,6 +4,7 @@
 #include "core/Entity.hpp"
 #include "core/ResourceManager.hpp"
 #include <SFML/Graphics.hpp>
+#include <optional>
 
 namespace entities {
 
@@ -28,6 +29,18 @@ public:
     void setChaseSpeed(float speed) noexcept { chaseSpeed_ = speed; }
     void setObstacles(const std::vector<core::AABB>* obstacles) noexcept { obstacles_ = obstacles; }
     sf::Vector2f resolveMove(sf::Vector2f desired) noexcept;
+
+    struct MeleeAttack {
+        sf::Vector2f origin;
+        sf::Vector2f direction; // unit vector (facing for the strike)
+        float radius{0.f};
+        float halfAngleRad{0.f};
+        int damage{0};
+    };
+
+    /// If an attack finished its wind-up this frame, returns the strike data
+    /// once and clears the pending flag.
+    [[nodiscard]] std::optional<MeleeAttack> consumePendingAttack() noexcept;
 
 protected:
     void onDraw(sf::RenderTarget& target, sf::RenderStates states) const override;
@@ -54,6 +67,19 @@ private:
     float chaseSpeed_{100.f};
     const std::vector<core::AABB>* obstacles_{nullptr};
     sf::Vector2f knockbackVel_{0.f, 0.f};
+
+    // Melee attack (telegraphed)
+    static constexpr float kAttackRadius_{70.f};
+    static constexpr float kAttackArcHalfAngleRad_{3.1415926f / 3.f}; // 60°
+    static constexpr float kAttackWindupSec_{0.75f};
+    static constexpr float kAttackCooldownSec_{1.2f};
+    static constexpr int kAttackDamage_{12};
+
+    float attackWindupRemaining_{0.f};
+    float attackCooldownRemaining_{0.f};
+    bool attackWindingUp_{false};
+    bool attackPending_{false};
+    sf::Vector2f attackDir_{1.f, 0.f};
 };
 
 class Loot final : public Entity {

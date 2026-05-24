@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <optional>
 
 using namespace sf;
 
@@ -15,6 +16,13 @@ constexpr float kMinSpeed = 0.001f;
 Vector2f normalizeOrZero(const Vector2f& v) {
     const float lenSq = v.x * v.x + v.y * v.y;
     if (lenSq <= kMinSpeed) return {0.f, 0.f};
+    const float invLen = 1.f / std::sqrt(lenSq);
+    return {v.x * invLen, v.y * invLen};
+}
+
+Vector2f normalizeOrRight(const Vector2f& v) {
+    const float lenSq = v.x * v.x + v.y * v.y;
+    if (lenSq <= kMinSpeed) return {1.f, 0.f};
     const float invLen = 1.f / std::sqrt(lenSq);
     return {v.x * invLen, v.y * invLen};
 }
@@ -46,37 +54,69 @@ void Enemy::applyShapeFromDesc() {
 }
 
 FloatRect Enemy::getLocalBounds() const {
-    if (shape_) return shape_->getLocalBounds();
-    return {{0.f, 0.f}, {36.f, 36.f}};
+    // Shapes are drawn centered (shape origin is set to its center), so the
+    // entity's local bounds must also be centered around (0,0). Otherwise
+    // getGlobalBounds() becomes offset and collision AABBs are wrong.
+    if (shape_) {
+        const auto b = shape_->getLocalBounds();
+        return {{-b.size.x * 0.5f, -b.size.y * 0.5f}, b.size};
+    }
+    return {{-18.f, -18.f}, {36.f, 36.f}};
 }
 
 void Enemy::update(float dt) {
     if (!isActive() || isDead()) return;
 
     flashTimer_ = std::max(0.f, flashTimer_ - dt);
+    attackCooldownRemaining_ = std::max(0.f, attackCooldownRemaining_ - dt);
 
-    // Apply and dampen knockback velocity
-    if (knockbackVel_.x != 0.f || knockbackVel_.y != 0.f) {
-        const Vector2f resolvedKb = resolveMove(knockbackVel_ * dt);
-        if (resolvedKb.x != 0.f || resolvedKb.y != 0.f) {
-            move(resolvedKb);
+    // Apply and dampen knockback velocity.
+    // While attacking (wind-up or pending strike), the enemy is locked in place.
+    if (!attackWindingUp_ && !attackPending_) {
+        if (knockbackVel_.x != 0.f || knockbackVel_.y != 0.f) {
+            const Vector2f resolvedKb = resolveMove(knockbackVel_ * dt);
+            if (resolvedKb.x != 0.f || resolvedKb.y != 0.f) {
+                move(resolvedKb);
+            }
+            // Dampen: reduce by 80% per second
+            const float decay = std::exp(-8.f * dt);
+            knockbackVel_.x *= decay;
+            knockbackVel_.y *= decay;
+            if (std::abs(knockbackVel_.x) < 0.5f && std::abs(knockbackVel_.y) < 0.5f) {
+                knockbackVel_ = {0.f, 0.f};
+            }
         }
-        // Dampen: reduce by 80% per second
-        const float decay = std::exp(-8.f * dt);
-        knockbackVel_.x *= decay;
-        knockbackVel_.y *= decay;
-        if (std::abs(knockbackVel_.x) < 0.5f && std::abs(knockbackVel_.y) < 0.5f) {
-            knockbackVel_ = {0.f, 0.f};
+    } else {
+        // Hard lock: ignore knockback during committed attack.
+        knockbackVel_ = {0.f, 0.f};
+    }
+
+    // Melee attack wind-up/strike state machine.
+    // While winding up, the enemy pauses chasing to make the telegraph readable.
+    if (attackWindingUp_) {
+        attackWindupRemaining_ -= dt;
+        if (attackWindupRemaining_ <= 0.f) {
+            attackWindingUp_ = false;
+            attackPending_ = true;
+            attackCooldownRemaining_ = kAttackCooldownSec_;
         }
     }
 
     // Simple chase: move toward player if position is known
-    if (playerPos_) {
+    // (disabled while attack is committed).
+    if (playerPos_ && !attackWindingUp_ && !attackPending_) {
         const Vector2f toPlayer = *playerPos_ - getPosition();
         const Vector2f dir = normalizeOrZero(toPlayer);
         const float dist = std::sqrt(toPlayer.x * toPlayer.x + toPlayer.y * toPlayer.y);
 
-        if (dist > 5.f) { // don't jitter when very close
+        // Start an attack if close enough and not on cooldown.
+        if (attackCooldownRemaining_ <= 0.f && dist <= kAttackRadius_) {
+            attackWindingUp_ = true;
+            attackWindupRemaining_ = kAttackWindupSec_;
+            attackDir_ = normalizeOrRight(toPlayer);
+        }
+
+        if (!attackWindingUp_ && dist > 5.f) { // don't jitter when very close
             const Vector2f resolved = resolveMove(dir * chaseSpeed_ * dt);
             if (resolved.x != 0.f || resolved.y != 0.f) {
                 move(resolved);
@@ -116,6 +156,34 @@ sf::Vector2f Enemy::resolveMove(sf::Vector2f desired) noexcept {
 }
 
 void Enemy::onDraw(sf::RenderTarget& target, sf::RenderStates states) const {
+    // Telegraph melee strike radius during wind-up.
+    if (attackWindingUp_) {
+        const float t = std::clamp(1.f - (attackWindupRemaining_ / kAttackWindupSec_), 0.f, 1.f);
+        const float baseAngle = std::atan2(attackDir_.y, attackDir_.x);
+
+        // Draw a cone sector (like player's slash arc), in enemy-local space.
+        constexpr int kSegments = 18;
+        sf::VertexArray fan(sf::PrimitiveType::TriangleFan, kSegments + 2);
+        const auto alphaFill = static_cast<std::uint8_t>(20.f + 70.f * t);
+        const auto alphaEdge = static_cast<std::uint8_t>(90.f + 140.f * t);
+        const sf::Color fill(255, 60, 60, alphaFill);
+        const sf::Color edge(255, 140, 140, alphaEdge);
+
+        fan[0].position = {0.f, 0.f};
+        fan[0].color = fill;
+        for (int i = 0; i <= kSegments; ++i) {
+            const float frac = static_cast<float>(i) / static_cast<float>(kSegments);
+            const float angle = baseAngle - kAttackArcHalfAngleRad_ +
+                                frac * 2.f * kAttackArcHalfAngleRad_;
+            fan[i + 1].position = sf::Vector2f{std::cos(angle), std::sin(angle)} * kAttackRadius_;
+            fan[i + 1].color = edge;
+        }
+
+        // Draw in world space (ignore enemy's transform already baked in `states`)
+        // is NOT desired here; we want it attached to the enemy, so keep `states`.
+        target.draw(fan, states);
+    }
+
     if (shape_) {
         if (flashTimer_ > 0.f) {
             const Color savedFill = shape_->getFillColor();
@@ -148,14 +216,29 @@ void Enemy::onDraw(sf::RenderTarget& target, sf::RenderStates states) const {
     }
 }
 
+std::optional<Enemy::MeleeAttack> Enemy::consumePendingAttack() noexcept {
+    if (!attackPending_) return std::nullopt;
+    attackPending_ = false;
+    return Enemy::MeleeAttack{.origin = getPosition(),
+                              .direction = attackDir_,
+                              .radius = kAttackRadius_,
+                              .halfAngleRad = kAttackArcHalfAngleRad_,
+                              .damage = kAttackDamage_};
+}
+
 // ---- Loot ----
 
 Loot::Loot(const Vector2f& pos, std::string itemName, int value)
     : itemName_(std::move(itemName)), value_(value) {
     setPosition(pos);
     circle_.setRadius(10.f);
-    circle_.setFillColor(Color(255, 215, 0));
-    circle_.setOutlineColor(Color::White);
+    if (itemName_ == "hp") {
+        circle_.setFillColor(Color(80, 220, 120));
+        circle_.setOutlineColor(Color::Black);
+    } else {
+        circle_.setFillColor(Color(255, 215, 0));
+        circle_.setOutlineColor(Color::White);
+    }
     circle_.setOutlineThickness(1.f);
     circle_.setOrigin({10.f, 10.f});
 }

@@ -35,6 +35,16 @@ std::mt19937& rng() {
     return rng_;
 }
 
+// Loot drops
+constexpr float kHealthDropChance = 0.25f; // 25% chance per kill
+constexpr int kChaserHealthDrop = 10;
+constexpr int kShooterHealthDrop = 15;
+
+bool rollChance(float p) {
+    std::uniform_real_distribution<float> dist{0.f, 1.f};
+    return dist(rng()) < std::clamp(p, 0.f, 1.f);
+}
+
 sf::Vector2f randomEdgePosition(const sf::FloatRect& bounds) {
     std::uniform_real_distribution<float> distX(bounds.position.x,
                                                  bounds.position.x + bounds.size.x - 40.f);
@@ -62,6 +72,72 @@ void clampViewToBounds(sf::View& view, const sf::FloatRect& worldBounds) {
         std::clamp(currentCenter.x, minPos.x, maxPos.x),
         std::clamp(currentCenter.y, minPos.y, maxPos.y)
     });
+}
+
+struct MenuButtons3 {
+    sf::FloatRect b0;
+    sf::FloatRect b1;
+    sf::FloatRect b2;
+};
+
+struct MenuButtons2 {
+    sf::FloatRect b0;
+    sf::FloatRect b1;
+};
+
+MenuButtons3 layoutGameOverButtons(const sf::Vector2u& winSz) {
+    const float winW = static_cast<float>(winSz.x);
+    const float winH = static_cast<float>(winSz.y);
+    const sf::Vector2f panelSize{420.f, 260.f};
+    const sf::Vector2f panelPos{(winW - panelSize.x) * 0.5f, (winH - panelSize.y) * 0.5f};
+
+    const float btnW = 240.f;
+    const float btnH = 44.f;
+    const float x = panelPos.x + (panelSize.x - btnW) * 0.5f;
+    const float y0 = panelPos.y + 120.f;
+    const float gap = 12.f;
+
+    return {
+        .b0 = {{x, y0}, {btnW, btnH}},
+        .b1 = {{x, y0 + (btnH + gap) * 1.f}, {btnW, btnH}},
+        .b2 = {{x, y0 + (btnH + gap) * 2.f}, {btnW, btnH}},
+    };
+}
+
+MenuButtons2 layoutMainMenuButtons(const sf::Vector2u& winSz) {
+    const float winW = static_cast<float>(winSz.x);
+    const float winH = static_cast<float>(winSz.y);
+    const sf::Vector2f panelSize{520.f, 320.f};
+    const sf::Vector2f panelPos{(winW - panelSize.x) * 0.5f, (winH - panelSize.y) * 0.5f};
+
+    const float btnW = 240.f;
+    const float btnH = 44.f;
+    const float x = panelPos.x + (panelSize.x - btnW) * 0.5f;
+    const float y0 = panelPos.y + 140.f;
+    const float gap = 12.f;
+
+    return {
+        .b0 = {{x, y0}, {btnW, btnH}},
+        .b1 = {{x, y0 + (btnH + gap)}, {btnW, btnH}},
+    };
+}
+
+MenuButtons2 layoutRoundCompleteButtons(const sf::Vector2u& winSz) {
+    const float winW = static_cast<float>(winSz.x);
+    const float winH = static_cast<float>(winSz.y);
+    const sf::Vector2f panelSize{520.f, 260.f};
+    const sf::Vector2f panelPos{(winW - panelSize.x) * 0.5f, (winH - panelSize.y) * 0.5f};
+
+    const float btnW = 260.f;
+    const float btnH = 44.f;
+    const float x = panelPos.x + (panelSize.x - btnW) * 0.5f;
+    const float y0 = panelPos.y + 110.f;
+    const float gap = 12.f;
+
+    return {
+        .b0 = {{x, y0}, {btnW, btnH}},
+        .b1 = {{x, y0 + (btnH + gap)}, {btnW, btnH}},
+    };
 }
 
 } // namespace
@@ -124,6 +200,12 @@ int main() {
     std::vector<std::unique_ptr<entities::ShooterEnemy>> shooters;
     std::vector<std::unique_ptr<entities::Loot>> loot;
     std::vector<std::unique_ptr<entities::Projectile>> playerProjectiles;
+
+    // Dynamic collision sets (rebuilt each fixed tick)
+    std::vector<core::AABB> playerDynamicObstacles;
+    std::vector<core::AABB> enemyDynamicObstacles;
+    playerDynamicObstacles.reserve(256);
+    enemyDynamicObstacles.reserve(256);
 
     int killCount = 0;
 
@@ -190,6 +272,10 @@ int main() {
     core::GameState gameState = core::GameState::Playing;
     const sf::Vector2f playerSpawn{1000.f, 1000.f};
 
+    int gameOverSelection = 0; // 0 restart, 1 menu, 2 exit
+    int mainMenuSelection = 0; // 0 start, 1 exit
+    int roundCompleteSelection = 0; // 0 next, 1 menu
+
     // Full game reset (used on game over -> R). Keeps loaded sprite atlases.
     auto resetGame = [&]() {
         player.reset(playerSpawn);
@@ -211,6 +297,35 @@ int main() {
         std::cout << "[Game] Restarted\n";
     };
 
+    auto enterMainMenu = [&]() {
+        // Minimal placeholder: clear world and show menu overlay.
+        player.reset(playerSpawn);
+        player.setSpeed(220.f);
+        player.setWeapon(std::make_unique<combat::SwordWeapon>(25, 55.f));
+        enemies.clear();
+        shooters.clear();
+        loot.clear();
+        playerProjectiles.clear();
+        inventory = core::Inventory(20);
+        killCount = 0;
+        waveManager = core::WaveManager(4.f);
+        shop = core::Shop{};
+        eventBus.reset();
+        vampiricFang.reset();
+        explosiveShells.reset();
+        gameOverSelection = 0;
+        mainMenuSelection = 0;
+        roundCompleteSelection = 0;
+        gameState = core::GameState::MainMenu;
+        std::cout << "[Menu] Entered main menu (placeholder)\n";
+    };
+
+    auto startNextRound = [&]() {
+        gameState = core::GameState::Playing;
+        waveManager.startNextWave();
+        std::cout << "[Wave] Wave " << waveManager.waveNumber() << " started!\n";
+    };
+
     // Fixed timestep accumulator
     float accumulator = 0.f;
     sf::Clock gameClock;
@@ -223,8 +338,38 @@ int main() {
             if (eventOpt->is<sf::Event::Closed>()) {
                 window.close();
             }
+            if (auto* mouse = eventOpt->getIf<sf::Event::MouseButtonPressed>()) {
+                if (mouse->button == sf::Mouse::Button::Left) {
+                    const auto mousePx = sf::Vector2i{mouse->position};
+                    const sf::Vector2f mouseUi = window.mapPixelToCoords(mousePx, window.getDefaultView());
+
+                    if (gameState == core::GameState::GameOver) {
+                        const auto btn = layoutGameOverButtons(window.getSize());
+                        if (btn.b0.contains(mouseUi)) resetGame();
+                        else if (btn.b1.contains(mouseUi)) enterMainMenu();
+                        else if (btn.b2.contains(mouseUi)) window.close();
+                    } else if (gameState == core::GameState::MainMenu) {
+                        const auto btn = layoutMainMenuButtons(window.getSize());
+                        if (btn.b0.contains(mouseUi)) resetGame();
+                        else if (btn.b1.contains(mouseUi)) window.close();
+                    } else if (gameState == core::GameState::RoundComplete) {
+                        const auto btn = layoutRoundCompleteButtons(window.getSize());
+                        if (btn.b0.contains(mouseUi)) startNextRound();
+                        else if (btn.b1.contains(mouseUi)) enterMainMenu();
+                    }
+                }
+            }
             if (auto* key = eventOpt->getIf<sf::Event::KeyPressed>()) {
-                if (gameState == core::GameState::Shop) {
+                if (gameState == core::GameState::MainMenu) {
+                    if (key->code == sf::Keyboard::Key::Up || key->code == sf::Keyboard::Key::W) {
+                        mainMenuSelection = (mainMenuSelection + 1) % 2;
+                    } else if (key->code == sf::Keyboard::Key::Down || key->code == sf::Keyboard::Key::S) {
+                        mainMenuSelection = (mainMenuSelection + 1) % 2;
+                    } else if (key->code == sf::Keyboard::Key::Enter) {
+                        if (mainMenuSelection == 0) resetGame();
+                        else window.close();
+                    }
+                } else if (gameState == core::GameState::Shop) {
                     // Shop input: 1/2/3 buy, Enter close
                     auto tryBuy = [&](std::size_t idx) {
                         if (shop.buy(idx, player, inventory)) {
@@ -244,17 +389,51 @@ int main() {
                                   << " started!\n";
                     }
                 } else if (gameState == core::GameState::GameOver) {
-                    if (key->code == sf::Keyboard::Key::R) {
+                    if (key->code == sf::Keyboard::Key::Up || key->code == sf::Keyboard::Key::W) {
+                        gameOverSelection = (gameOverSelection + 2) % 3;
+                    } else if (key->code == sf::Keyboard::Key::Down || key->code == sf::Keyboard::Key::S) {
+                        gameOverSelection = (gameOverSelection + 1) % 3;
+                    } else if (key->code == sf::Keyboard::Key::Num1) {
                         resetGame();
+                    } else if (key->code == sf::Keyboard::Key::Num2) {
+                        enterMainMenu();
+                    } else if (key->code == sf::Keyboard::Key::Num3) {
+                        window.close();
+                    } else if (key->code == sf::Keyboard::Key::R) {
+                        resetGame();
+                    } else if (key->code == sf::Keyboard::Key::Enter) {
+                        if (gameOverSelection == 0) resetGame();
+                        else if (gameOverSelection == 1) enterMainMenu();
+                        else window.close();
+                    }
+                } else if (gameState == core::GameState::RoundComplete) {
+                    if (key->code == sf::Keyboard::Key::Up || key->code == sf::Keyboard::Key::W) {
+                        roundCompleteSelection = (roundCompleteSelection + 1) % 2;
+                    } else if (key->code == sf::Keyboard::Key::Down || key->code == sf::Keyboard::Key::S) {
+                        roundCompleteSelection = (roundCompleteSelection + 1) % 2;
+                    } else if (key->code == sf::Keyboard::Key::Num1) {
+                        startNextRound();
+                    } else if (key->code == sf::Keyboard::Key::Num2) {
+                        enterMainMenu();
+                    } else if (key->code == sf::Keyboard::Key::Enter) {
+                        if (roundCompleteSelection == 0) startNextRound();
+                        else enterMainMenu();
                     }
                 } else {
                     // Playing: E key to pick up loot, Q toggles weapon
                     if (key->code == sf::Keyboard::Key::E) {
                         for (auto& l : loot) {
                             if (!l->consumed() && l->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
-                                std::cout << "[Loot] Picked up: " << l->itemName()
-                                          << " x" << l->value() << "\n";
-                                inventory.addItem(l->itemName(), {.stackSize = l->value()});
+                                if (l->itemName() == "hp") {
+                                    const int before = player.health();
+                                    player.heal(l->value());
+                                    const int healed = player.health() - before;
+                                    std::cout << "[Loot] Picked up: hp +" << healed << "\n";
+                                } else {
+                                    std::cout << "[Loot] Picked up: " << l->itemName()
+                                              << " x" << l->value() << "\n";
+                                    inventory.addItem(l->itemName(), {.stackSize = l->value()});
+                                }
                                 l->consume();
                             }
                         }
@@ -280,8 +459,44 @@ int main() {
         accumulator += realDt;
         int steps = 0;
         while (accumulator >= kFixedDt && steps < kMaxFrameSkip) {
+            // Build player obstacle list = static obstacles + all alive enemies.
+            playerDynamicObstacles.clear();
+            playerDynamicObstacles.insert(playerDynamicObstacles.end(),
+                                          obstacleAABBs.begin(), obstacleAABBs.end());
+            for (const auto& e : enemies) {
+                if (e && e->isAlive()) {
+                    playerDynamicObstacles.push_back(core::fromFloatRect(e->getGlobalBounds()));
+                }
+            }
+            for (const auto& s : shooters) {
+                if (s && s->isAlive()) {
+                    playerDynamicObstacles.push_back(core::fromFloatRect(s->getGlobalBounds()));
+                }
+            }
+            player.setObstacles(&playerDynamicObstacles);
+
             // Player
             player.update(kFixedDt);
+
+            // Build enemy obstacle list = static obstacles + player.
+            enemyDynamicObstacles.clear();
+            enemyDynamicObstacles.insert(enemyDynamicObstacles.end(),
+                                         obstacleAABBs.begin(), obstacleAABBs.end());
+            enemyDynamicObstacles.push_back(core::fromFloatRect(player.getGlobalBounds()));
+
+            // Auto-pickup: health drops are consumed on contact (no E needed).
+            for (auto& l : loot) {
+                if (l->consumed()) continue;
+                if (l->itemName() != "hp") continue;
+                if (!l->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
+                    continue;
+                }
+                const int before = player.health();
+                player.heal(l->value());
+                const int healed = player.health() - before;
+                std::cout << "[Loot] Auto-picked: hp +" << healed << "\n";
+                l->consume();
+            }
 
             // Combat: fire active weapon if Space is held and weapon is ready.
             if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space)
@@ -314,6 +529,10 @@ int main() {
                                 waveManager.onEnemyKilled();
                                 loot.push_back(std::make_unique<entities::Loot>(
                                     enemy->getPosition(), "coin", 5));
+                                if (rollChance(kHealthDropChance)) {
+                                    loot.push_back(std::make_unique<entities::Loot>(
+                                        enemy->getPosition(), "hp", kChaserHealthDrop));
+                                }
                             }
                         }
                     }
@@ -340,6 +559,10 @@ int main() {
                                 waveManager.onEnemyKilled();
                                 loot.push_back(std::make_unique<entities::Loot>(
                                     shooter->getPosition(), "coin", 10));
+                                if (rollChance(kHealthDropChance)) {
+                                    loot.push_back(std::make_unique<entities::Loot>(
+                                        shooter->getPosition(), "hp", kShooterHealthDrop));
+                                }
                             }
                         }
                     }
@@ -360,13 +583,45 @@ int main() {
             for (auto& enemy : enemies) {
                 if (!enemy->isAlive()) continue;
                 enemy->setPlayerPosition(&playerPos);
+                enemy->setObstacles(&enemyDynamicObstacles);
                 enemy->update(kFixedDt);
+            }
+
+            // Resolve enemy melee strikes (wind-up completed).
+            for (auto& enemy : enemies) {
+                if (!enemy->isAlive() || player.isDead()) continue;
+                const auto atk = enemy->consumePendingAttack();
+                if (!atk) continue;
+                const sf::Vector2f toPlayer = player.getPosition() - atk->origin;
+                const float distSq = toPlayer.x * toPlayer.x + toPlayer.y * toPlayer.y;
+                if (distSq <= atk->radius * atk->radius) {
+                    // Sector check via dot product: cos(theta) = dot(a,b)
+                    // where both vectors are unit. Compare to cos(halfAngle).
+                    const float len = std::sqrt(distSq);
+                    sf::Vector2f dirToPlayer{0.f, 0.f};
+                    if (len > 0.0001f) {
+                        dirToPlayer = {toPlayer.x / len, toPlayer.y / len};
+                    }
+                    const float dot = atk->direction.x * dirToPlayer.x + atk->direction.y * dirToPlayer.y;
+                    const float cosHalf = std::cos(atk->halfAngleRad);
+                    if (dot >= cosHalf) {
+                    player.takeDamage(atk->damage);
+                    triggerShake(9.f);
+                    std::cout << "[Combat] Player hit by chaser melee! HP: "
+                              << player.health() << "/" << player.maxHealth() << "\n";
+                    if (player.isDead()) {
+                        gameState = core::GameState::GameOver;
+                        std::cout << "[Game] Player died -- GAME OVER\n";
+                    }
+                    }
+                }
             }
 
             // Shooters
             for (auto& shooter : shooters) {
                 if (!shooter->isAlive()) continue;
                 shooter->setPlayerPosition(&playerPos);
+                shooter->setObstacles(&enemyDynamicObstacles);
                 shooter->update(kFixedDt);
             }
 
@@ -381,6 +636,8 @@ int main() {
                         proj->markConsumed();
                         if (player.isDead()) {
                             gameState = core::GameState::GameOver;
+                            gameOverSelection = 0;
+                            gameOverSelection = 0;
                             std::cout << "[Game] Player died -- GAME OVER\n";
                         }
                     }
@@ -415,6 +672,11 @@ int main() {
                         waveManager.onEnemyKilled();
                         loot.push_back(std::make_unique<entities::Loot>(
                             target->getPosition(), "coin", coinValue));
+                        const int hpDrop = (coinValue >= 10) ? kShooterHealthDrop : kChaserHealthDrop;
+                        if (rollChance(kHealthDropChance)) {
+                            loot.push_back(std::make_unique<entities::Loot>(
+                                target->getPosition(), "hp", hpDrop));
+                        }
                         std::cout << "[Combat] " << label << " killed by pellet!\n";
                     }
                     proj->markConsumed();
@@ -471,14 +733,34 @@ int main() {
             }
         }
 
-        // Auto-open shop when the wave is fully cleared
-        if (waveManager.waveActive() && waveManager.enemiesRemaining() == 0
-            && enemies.empty() && shooters.empty()) {
-            waveManager.forceClear();
-            gameState = core::GameState::Shop;
-            std::cout << "[Shop] Wave " << waveManager.waveNumber()
-                      << " cleared -- shop opened\n";
-        }
+         // Open round-complete menu when the wave is fully cleared.
+         // Note: we do deferred removal AFTER the update step, so containers may still hold
+         // dead entities here. Check for "no alive enemies" instead of .empty().
+         if (waveManager.waveActive() && waveManager.enemiesRemaining() == 0) {
+             bool anyAlive = false;
+             for (const auto& e : enemies) {
+                 if (e && e->isAlive()) {
+                     anyAlive = true;
+                     break;
+                 }
+             }
+             if (!anyAlive) {
+                 for (const auto& s : shooters) {
+                     if (s && s->isAlive()) {
+                         anyAlive = true;
+                         break;
+                     }
+                 }
+             }
+
+             if (!anyAlive) {
+                 waveManager.forceClear();
+                 gameState = core::GameState::RoundComplete;
+                 roundCompleteSelection = 0;
+                 std::cout << "[Wave] Wave " << waveManager.waveNumber()
+                           << " cleared -- round complete\n";
+             }
+         }
         } // end if (gameState == Playing)
 
         // ---- Deferred removal (dead enemies and consumed loot) ----
@@ -596,9 +878,32 @@ int main() {
         hudState.shopOpen = (gameState == core::GameState::Shop);
         hudState.shop = &shop;
         hudState.isGameOver = (gameState == core::GameState::GameOver);
+        hudState.isMainMenu = (gameState == core::GameState::MainMenu);
+        hudState.isRoundComplete = (gameState == core::GameState::RoundComplete);
         hudState.weaponName = player.weapon()
             ? std::string(player.weapon()->name())
             : std::string("(none)");
+
+        // Menu layouts
+        if (hudState.isGameOver) {
+            const auto btn = layoutGameOverButtons(window.getSize());
+            hudState.gameOverBtnRestart = btn.b0;
+            hudState.gameOverBtnMenu = btn.b1;
+            hudState.gameOverBtnExit = btn.b2;
+            hudState.gameOverSelected = gameOverSelection;
+        }
+        if (hudState.isMainMenu) {
+            const auto btn = layoutMainMenuButtons(window.getSize());
+            hudState.mainMenuBtnStart = btn.b0;
+            hudState.mainMenuBtnExit = btn.b1;
+            hudState.mainMenuSelected = mainMenuSelection;
+        }
+        if (hudState.isRoundComplete) {
+            const auto btn = layoutRoundCompleteButtons(window.getSize());
+            hudState.roundCompleteBtnNext = btn.b0;
+            hudState.roundCompleteBtnMenu = btn.b1;
+            hudState.roundCompleteSelected = roundCompleteSelection;
+        }
         hud.draw(window, hudState);
 
         window.display();

@@ -13,7 +13,12 @@ public:
     void update(float dt) override;
     [[nodiscard]] sf::FloatRect getLocalBounds() const override;
     [[nodiscard]] int damage() const noexcept { return damage_; }
-    void markConsumed() noexcept { consumed_ = true; }
+    void markConsumed() noexcept {
+        consumed_ = true;
+        // Entity::draw() skips dead entities; this prevents a hit projectile
+        // from being rendered for the rest of the frame.
+        markForRemoval();
+    }
     [[nodiscard]] bool consumed() const noexcept { return consumed_; }
 
 protected:

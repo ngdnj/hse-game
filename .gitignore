@@ -5,6 +5,8 @@ bin/
 dist/
 _build/
 _build-tests/
+build-tests/
+build-release/
 
 # CMake
 CMakeFiles/
