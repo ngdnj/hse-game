@@ -3,7 +3,9 @@
 namespace core {
 
 enum class GameState {
+    MainMenu,
     Playing,
+    RoundComplete,
     Shop,
     GameOver,
 };

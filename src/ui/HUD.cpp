@@ -1,5 +1,6 @@
 #include "ui/HUD.hpp"
 
+#include <array>
 #include <algorithm>
 #include <iostream>
 #include <string>
@@ -16,7 +17,23 @@ constexpr float kBarHeight = 10.f;
 HUD::HUD(const std::string& fontPath) {
     hasFont_ = font_.openFromFile(fontPath);
     if (!hasFont_) {
-        std::cerr << "[HUD] Could not load font: " << fontPath << "\n";
+        // Fallbacks for non-macOS environments (the default path is macOS).
+        static const std::array<const char*, 3> kFallbacks{
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", // common on Linux
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",             // some distros
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf"  // alternative
+        };
+        for (const auto* p : kFallbacks) {
+            if (font_.openFromFile(p)) {
+                hasFont_ = true;
+                std::cerr << "[HUD] Loaded fallback font: " << p << "\n";
+                break;
+            }
+        }
+    }
+    if (!hasFont_) {
+        std::cerr << "[HUD] Could not load font (no text will be drawn). Tried: "
+                  << fontPath << "\n";
     }
 }
 
@@ -63,7 +80,15 @@ void HUD::draw(sf::RenderTarget& target, const HudState& state) const {
     }
 
     if (state.isGameOver) {
-        drawGameOver(target);
+        drawGameOver(target, state);
+    }
+
+    if (state.isMainMenu) {
+        drawMainMenu(target, state);
+    }
+
+    if (state.isRoundComplete) {
+        drawRoundComplete(target, state);
     }
 }
 
@@ -170,7 +195,7 @@ void HUD::drawShopOverlay(sf::RenderTarget& target, const HudState& state) const
              "Press 1/2/3 to buy   ENTER to continue", 14);
 }
 
-void HUD::drawGameOver(sf::RenderTarget& target) const {
+void HUD::drawGameOver(sf::RenderTarget& target, const HudState& state) const {
     const sf::Vector2u winSz = target.getSize();
     const auto winW = static_cast<float>(winSz.x);
     const auto winH = static_cast<float>(winSz.y);
@@ -179,7 +204,7 @@ void HUD::drawGameOver(sf::RenderTarget& target) const {
     dim.setFillColor(sf::Color(0, 0, 0, 200));
     target.draw(dim);
 
-    const sf::Vector2f panelSize{420.f, 160.f};
+    const sf::Vector2f panelSize{420.f, 260.f};
     const sf::Vector2f panelPos{
         (winW - panelSize.x) * 0.5f,
         (winH - panelSize.y) * 0.5f};
@@ -191,29 +216,103 @@ void HUD::drawGameOver(sf::RenderTarget& target) const {
     panel.setOutlineThickness(3.f);
     target.draw(panel);
 
+    if (hasFont_) {
+        sf::Text title(font_, sf::String("GAME OVER"), 48);
+        title.setFillColor(sf::Color(240, 80, 80));
+        title.setOutlineColor(sf::Color::Black);
+        title.setOutlineThickness(2.f);
+        const auto titleBounds = title.getLocalBounds();
+        title.setPosition({
+            panelPos.x + (panelSize.x - titleBounds.size.x) * 0.5f - titleBounds.position.x,
+            panelPos.y + 18.f
+        });
+        target.draw(title);
+    }
+
+    drawText(target, {panelPos.x + 20.f, panelPos.y + 92.f},
+             "Choose an option:", 16);
+
+    drawButton(target, state.gameOverBtnRestart, "Restart", state.gameOverSelected == 0);
+    drawButton(target, state.gameOverBtnMenu, "Menu", state.gameOverSelected == 1);
+    drawButton(target, state.gameOverBtnExit, "Exit", state.gameOverSelected == 2);
+
+    drawText(target, {panelPos.x + 20.f, panelPos.y + panelSize.y - 28.f},
+             "Use Up/Down + Enter, or click", 14);
+}
+
+void HUD::drawButton(sf::RenderTarget& target, const sf::FloatRect& r,
+                     const std::string& label, bool selected) const {
+    sf::RectangleShape btn({r.size.x, r.size.y});
+    btn.setPosition(r.position);
+    btn.setFillColor(selected ? sf::Color(90, 120, 200) : sf::Color(60, 70, 90));
+    btn.setOutlineColor(selected ? sf::Color(220, 220, 255) : sf::Color(160, 160, 180));
+    btn.setOutlineThickness(selected ? 3.f : 2.f);
+    target.draw(btn);
+
     if (!hasFont_) return;
-
-    sf::Text title(font_, sf::String("GAME OVER"), 48);
-    title.setFillColor(sf::Color(240, 80, 80));
-    title.setOutlineColor(sf::Color::Black);
-    title.setOutlineThickness(2.f);
-    const auto titleBounds = title.getLocalBounds();
-    title.setPosition({
-        panelPos.x + (panelSize.x - titleBounds.size.x) * 0.5f - titleBounds.position.x,
-        panelPos.y + 24.f
+    sf::Text t(font_, sf::String(label), 20);
+    t.setFillColor(sf::Color::White);
+    t.setOutlineColor(sf::Color::Black);
+    t.setOutlineThickness(1.f);
+    const auto b = t.getLocalBounds();
+    t.setPosition({
+        r.position.x + (r.size.x - b.size.x) * 0.5f - b.position.x,
+        r.position.y + (r.size.y - b.size.y) * 0.5f - b.position.y - 2.f
     });
-    target.draw(title);
+    target.draw(t);
+}
 
-    sf::Text prompt(font_, sf::String("Press R to restart"), 20);
-    prompt.setFillColor(sf::Color::White);
-    prompt.setOutlineColor(sf::Color::Black);
-    prompt.setOutlineThickness(1.f);
-    const auto promptBounds = prompt.getLocalBounds();
-    prompt.setPosition({
-        panelPos.x + (panelSize.x - promptBounds.size.x) * 0.5f - promptBounds.position.x,
-        panelPos.y + panelSize.y - 50.f
-    });
-    target.draw(prompt);
+void HUD::drawMainMenu(sf::RenderTarget& target, const HudState& state) const {
+    const sf::Vector2u winSz = target.getSize();
+    const auto winW = static_cast<float>(winSz.x);
+    const auto winH = static_cast<float>(winSz.y);
+
+    sf::RectangleShape dim({winW, winH});
+    dim.setFillColor(sf::Color(0, 0, 0, 190));
+    target.draw(dim);
+
+    const sf::Vector2f panelSize{520.f, 320.f};
+    const sf::Vector2f panelPos{(winW - panelSize.x) * 0.5f, (winH - panelSize.y) * 0.5f};
+    sf::RectangleShape panel(panelSize);
+    panel.setPosition(panelPos);
+    panel.setFillColor(sf::Color(24, 28, 38));
+    panel.setOutlineColor(sf::Color(180, 180, 200));
+    panel.setOutlineThickness(3.f);
+    target.draw(panel);
+
+    drawText(target, {panelPos.x + 20.f, panelPos.y + 18.f}, "MAIN MENU (TODO)", 28);
+    drawText(target, {panelPos.x + 20.f, panelPos.y + 54.f}, "This is a placeholder screen.", 16);
+
+    drawButton(target, state.mainMenuBtnStart, "Start", state.mainMenuSelected == 0);
+    drawButton(target, state.mainMenuBtnExit, "Exit", state.mainMenuSelected == 1);
+}
+
+void HUD::drawRoundComplete(sf::RenderTarget& target, const HudState& state) const {
+    const sf::Vector2u winSz = target.getSize();
+    const auto winW = static_cast<float>(winSz.x);
+    const auto winH = static_cast<float>(winSz.y);
+
+    sf::RectangleShape dim({winW, winH});
+    dim.setFillColor(sf::Color(0, 0, 0, 170));
+    target.draw(dim);
+
+    const sf::Vector2f panelSize{520.f, 260.f};
+    const sf::Vector2f panelPos{(winW - panelSize.x) * 0.5f, (winH - panelSize.y) * 0.5f};
+    sf::RectangleShape panel(panelSize);
+    panel.setPosition(panelPos);
+    panel.setFillColor(sf::Color(20, 26, 40));
+    panel.setOutlineColor(sf::Color(180, 180, 220));
+    panel.setOutlineThickness(3.f);
+    target.draw(panel);
+
+    drawText(target, {panelPos.x + 18.f, panelPos.y + 16.f}, "ROUND CLEARED", 28);
+    drawText(target, {panelPos.x + 18.f, panelPos.y + 52.f}, "Choose what to do next:", 16);
+
+    drawButton(target, state.roundCompleteBtnNext, "Next round", state.roundCompleteSelected == 0);
+    drawButton(target, state.roundCompleteBtnMenu, "Menu", state.roundCompleteSelected == 1);
+
+    drawText(target, {panelPos.x + 18.f, panelPos.y + panelSize.y - 28.f},
+             "Use Up/Down + Enter, or click", 14);
 }
 
 } // namespace ui
