@@ -17,8 +17,12 @@ sf::Vector2f normalizeOrRight(sf::Vector2f v) {
 
 } // namespace
 
-SwordWeapon::SwordWeapon(int damage, float range, float cooldown)
-    : damage_(damage), range_(range), cooldown_(cooldown) {}
+SwordWeapon::SwordWeapon(int damage, float range, float cooldown, float knockbackMultiplier)
+    : damage_(damage)
+    , range_(range)
+    , cooldown_(cooldown)
+    , knockbackMultiplier_(std::max(0.f, knockbackMultiplier))
+{}
 
 void SwordWeapon::update(float dt) {
     cooldownRemaining_ = std::max(0.f, cooldownRemaining_ - dt);
@@ -35,6 +39,7 @@ AttackResult SwordWeapon::fire(sf::Vector2f origin, sf::Vector2f dir) {
     cooldownRemaining_ = cooldown_;
     result.hasMeleeHitbox = true;
     result.meleeHitbox = computeHitbox(origin, dir, range_);
+    result.knockbackMultiplier = knockbackMultiplier_;
     return result;
 }
 

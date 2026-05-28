@@ -31,6 +31,24 @@ struct HudState {
 
     bool isGameOver{false};
 
+    // Game over menu (computed in main loop in screen space)
+    sf::FloatRect gameOverBtnRestart{};
+    sf::FloatRect gameOverBtnMenu{};
+    sf::FloatRect gameOverBtnExit{};
+    int gameOverSelected{0}; // 0 restart, 1 menu, 2 exit
+
+    // Placeholder main menu
+    bool isMainMenu{false};
+    sf::FloatRect mainMenuBtnStart{};
+    sf::FloatRect mainMenuBtnExit{};
+    int mainMenuSelected{0}; // 0 start, 1 exit
+
+    // Round complete overlay (wave cleared)
+    bool isRoundComplete{false};
+    sf::FloatRect roundCompleteBtnNext{};
+    sf::FloatRect roundCompleteBtnMenu{};
+    int roundCompleteSelected{0}; // 0 next, 1 menu
+
     std::string weaponName{"Sword"};
 };
 
@@ -52,7 +70,11 @@ private:
     void drawHealthBar(sf::RenderTarget& target, sf::Vector2f pos,
                        int hp, int maxHp) const;
     void drawShopOverlay(sf::RenderTarget& target, const HudState& state) const;
-    void drawGameOver(sf::RenderTarget& target) const;
+    void drawGameOver(sf::RenderTarget& target, const HudState& state) const;
+    void drawMainMenu(sf::RenderTarget& target, const HudState& state) const;
+    void drawRoundComplete(sf::RenderTarget& target, const HudState& state) const;
+    void drawButton(sf::RenderTarget& target, const sf::FloatRect& r,
+                    const std::string& label, bool selected) const;
 
     sf::Font font_;
     bool hasFont_{false};

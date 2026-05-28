@@ -188,7 +188,10 @@ void Player::updateDirection(const sf::Vector2f &dir) {
     if (d.x == 0.f && d.y == 0.f) {
         d = lastDir_;
     } else {
-        lastDir_ = d;
+        // Keep a *unit-length* facing direction so diagonals do not carry
+        // a larger magnitude into dash/attack logic.
+        lastDir_ = normalizeOrZero(d);
+        d = lastDir_;
     }
 
     // Map direction to one of 8 rows (clockwise from right, screen coords: +Y

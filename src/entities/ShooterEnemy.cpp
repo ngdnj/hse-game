@@ -28,7 +28,10 @@ ShooterEnemy::ShooterEnemy(const Vector2f& pos, const FloatRect& worldBounds,
 }
 
 FloatRect ShooterEnemy::getLocalBounds() const {
-    if (shape_) return shape_->getLocalBounds();
+    if (shape_) {
+        const auto b = shape_->getLocalBounds();
+        return {{-b.size.x * 0.5f, -b.size.y * 0.5f}, b.size};
+    }
     return {{-16.f, -16.f}, {32.f, 32.f}};
 }
 
@@ -57,6 +60,9 @@ void ShooterEnemy::update(float dt) {
 
     // Update projectiles
     for (auto& p : projectiles_) p->update(dt);
+    std::erase_if(projectiles_, [](const std::unique_ptr<Projectile>& p) {
+        return p->consumed();
+    });
 
     // Shooter AI
     if (playerPos_) {
