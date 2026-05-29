@@ -4,6 +4,7 @@
 #include <optional>
 #include <random>
 #include <vector>
+#include <cstdint>
 
 #include "core/Collision.hpp"
 #include "core/GameState.hpp"
@@ -54,6 +55,8 @@ float variedSpeed(float base) {
 constexpr float kHealthDropChance = 0.25f; // 25% chance per kill
 constexpr int kChaserHealthDrop = 10;
 constexpr int kShooterHealthDrop = 15;
+constexpr int kChaserAmmoDrop = 2;
+constexpr int kShooterAmmoDrop = 3;
 
 bool rollChance(float p) {
     std::uniform_real_distribution<float> dist{0.f, 1.f};
@@ -181,6 +184,7 @@ int main() {
 
     const sf::Vector2f worldSize{2000.f, 2000.f};
     const sf::FloatRect worldBounds{sf::Vector2f{0.f, 0.f}, worldSize};
+    const sf::Vector2f playerSpawn{1000.f, 1000.f};
 
     // Camera
     sf::View camera;
@@ -198,10 +202,10 @@ int main() {
 
     // Create player with sprite atlases (gracefully falls back to colored
     // rectangle if textures fail to load — see Player ctor).
-    Player player(sf::Vector2f{40.f, 40.f}, sf::Vector2f{1000.f, 1000.f},
-                 worldBounds,
-                 "assets/player/run.png",
-                 "assets/player/idle.png");
+    Player player(sf::Vector2f{40.f, 40.f}, playerSpawn,
+                  worldBounds,
+                  "assets/player/run.png",
+                  "assets/player/idle.png");
     player.setSpeed(220.f);
     player.setAttackDamage(25);
     player.setAttackRange(55.f);
@@ -213,7 +217,99 @@ int main() {
     std::vector<std::unique_ptr<core::Obstacle>> obstacles;
     std::vector<core::AABB> obstacleAABBs;
 
-    // ---- Static obstacles ----
+    // ---- Randomized terrain tiles ----
+    constexpr float kTileSize = 80.f;
+    const int tilesX = static_cast<int>(worldSize.x / kTileSize);
+    const int tilesY = static_cast<int>(worldSize.y / kTileSize);
+    std::vector<std::uint8_t> terrain;
+    terrain.reserve(static_cast<std::size_t>(tilesX * tilesY));
+    sf::VertexArray terrainMesh(sf::PrimitiveType::Triangles);
+
+    auto buildTerrainMesh = [&]() {
+        terrainMesh.clear();
+        terrainMesh.resize(static_cast<std::size_t>(tilesX * tilesY * 6));
+        const auto colorFor = [](std::uint8_t t) {
+            switch (t) {
+                case 1: return sf::Color(70, 90, 70);   // dark grass
+                case 2: return sf::Color(90, 80, 60);   // dirt
+                default: return sf::Color(80, 110, 80); // grass
+            }
+        };
+
+        std::size_t idx = 0;
+        for (int y = 0; y < tilesY; ++y) {
+            for (int x = 0; x < tilesX; ++x) {
+                const float px = x * kTileSize;
+                const float py = y * kTileSize;
+                const std::uint8_t t = terrain[static_cast<std::size_t>(y * tilesX + x)];
+                const sf::Color c = colorFor(t);
+
+                const sf::Vector2f p0{px, py};
+                const sf::Vector2f p1{px + kTileSize, py};
+                const sf::Vector2f p2{px + kTileSize, py + kTileSize};
+                const sf::Vector2f p3{px, py + kTileSize};
+
+                // Triangle 1: p0, p1, p2
+                terrainMesh[idx + 0].position = p0;
+                terrainMesh[idx + 1].position = p1;
+                terrainMesh[idx + 2].position = p2;
+                // Triangle 2: p0, p2, p3
+                terrainMesh[idx + 3].position = p0;
+                terrainMesh[idx + 4].position = p2;
+                terrainMesh[idx + 5].position = p3;
+
+                for (int i = 0; i < 6; ++i) {
+                    terrainMesh[idx + static_cast<std::size_t>(i)].color = c;
+                }
+                idx += 6;
+            }
+        }
+    };
+
+    auto generateTerrain = [&]() {
+        terrain.assign(static_cast<std::size_t>(tilesX * tilesY), 0);
+        std::uniform_int_distribution<int> basePick(0, 99);
+        for (int y = 0; y < tilesY; ++y) {
+            for (int x = 0; x < tilesX; ++x) {
+                const int roll = basePick(rng());
+                std::uint8_t t = 0;
+                if (roll < 12) t = 2;       // dirt
+                else if (roll < 28) t = 1;  // dark grass
+                terrain[static_cast<std::size_t>(y * tilesX + x)] = t;
+            }
+        }
+
+        // Simple smoothing: apply a few neighbor-majority passes.
+        std::vector<std::uint8_t> scratch = terrain;
+        const int passes = 3;
+        for (int p = 0; p < passes; ++p) {
+            for (int y = 0; y < tilesY; ++y) {
+                for (int x = 0; x < tilesX; ++x) {
+                    int count0 = 0;
+                    int count1 = 0;
+                    int count2 = 0;
+                    for (int oy = -1; oy <= 1; ++oy) {
+                        for (int ox = -1; ox <= 1; ++ox) {
+                            const int nx = std::clamp(x + ox, 0, tilesX - 1);
+                            const int ny = std::clamp(y + oy, 0, tilesY - 1);
+                            const std::uint8_t t = terrain[static_cast<std::size_t>(ny * tilesX + nx)];
+                            if (t == 0) ++count0;
+                            else if (t == 1) ++count1;
+                            else ++count2;
+                        }
+                    }
+                    std::uint8_t next = 0;
+                    if (count2 >= count1 && count2 >= count0) next = 2;
+                    else if (count1 >= count0) next = 1;
+                    scratch[static_cast<std::size_t>(y * tilesX + x)] = next;
+                }
+            }
+            terrain.swap(scratch);
+        }
+        buildTerrainMesh();
+    };
+
+    // ---- Randomized static obstacles ----
     const auto obstacleColor = sf::Color(80, 100, 80);
     const auto obstacleOutline = sf::Color(50, 60, 50);
     const auto addObs = [&](int id, float x, float y, float w, float h) {
@@ -221,15 +317,78 @@ int main() {
             id, {x, y}, {w, h}, obstacleColor, obstacleOutline, 2.f}));
         obstacleAABBs.push_back(obstacles.back()->getAABB());
     };
-    // Scattered rocks/walls
-    addObs(1, 400.f, 300.f, 80.f, 40.f);
-    addObs(2, 600.f, 500.f, 120.f, 40.f);
-    addObs(3, 900.f, 200.f, 60.f, 80.f);
-    addObs(4, 1400.f, 600.f, 100.f, 50.f);
-    addObs(5, 300.f, 800.f, 70.f, 70.f);
-    addObs(6, 1100.f, 1100.f, 90.f, 40.f);
-    addObs(7, 1600.f, 400.f, 50.f, 100.f);
-    addObs(8, 700.f, 1400.f, 80.f, 60.f);
+    auto generateObstacles = [&]() {
+        obstacles.clear();
+        obstacleAABBs.clear();
+
+        const int targetCount = std::uniform_int_distribution<int>{8, 14}(rng());
+        const float margin = 70.f;
+        const float safeRadius = 220.f;
+        const core::AABB safeAabb = core::makeAABB(
+            {playerSpawn.x - safeRadius, playerSpawn.y - safeRadius},
+            {safeRadius * 2.f, safeRadius * 2.f});
+
+        std::uniform_real_distribution<float> longW(140.f, 240.f);
+        std::uniform_real_distribution<float> longH(40.f, 70.f);
+        std::uniform_real_distribution<float> tallW(40.f, 70.f);
+        std::uniform_real_distribution<float> tallH(140.f, 240.f);
+        std::uniform_real_distribution<float> squareW(60.f, 110.f);
+        std::uniform_real_distribution<float> squareH(60.f, 110.f);
+        std::uniform_real_distribution<float> pick(0.f, 1.f);
+
+        const float minX = worldBounds.position.x + margin;
+        const float minY = worldBounds.position.y + margin;
+        const float maxX = worldBounds.position.x + worldBounds.size.x - margin;
+        const float maxY = worldBounds.position.y + worldBounds.size.y - margin;
+
+        auto overlaps = [&](const core::AABB& candidate) {
+            if (core::intersects(candidate.min, candidate.max, safeAabb.min, safeAabb.max)) {
+                return true;
+            }
+            for (const auto& existing : obstacleAABBs) {
+                const float pad = 24.f;
+                const core::AABB expanded{{existing.min.x - pad, existing.min.y - pad},
+                                          {existing.max.x + pad, existing.max.y + pad}};
+                if (core::intersects(candidate.min, candidate.max, expanded.min, expanded.max)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        int placed = 0;
+        int id = 1;
+        const int maxAttempts = targetCount * 40;
+        for (int attempts = 0; placed < targetCount && attempts < maxAttempts; ++attempts) {
+            sf::Vector2f size;
+            const float roll = pick(rng());
+            if (roll < 0.4f) {
+                size = {longW(rng()), longH(rng())};
+            } else if (roll < 0.8f) {
+                size = {tallW(rng()), tallH(rng())};
+            } else {
+                size = {squareW(rng()), squareH(rng())};
+            }
+
+            const float maxPosX = maxX - size.x;
+            const float maxPosY = maxY - size.y;
+            if (maxPosX <= minX || maxPosY <= minY) {
+                continue;
+            }
+
+            std::uniform_real_distribution<float> posX(minX, maxPosX);
+            std::uniform_real_distribution<float> posY(minY, maxPosY);
+            const float x = posX(rng());
+            const float y = posY(rng());
+            const core::AABB candidate = core::makeAABB({x, y}, size);
+            if (overlaps(candidate)) continue;
+
+            addObs(id++, x, y, size.x, size.y);
+            ++placed;
+        }
+    };
+    generateTerrain();
+    generateObstacles();
     // Feed obstacles to entities
     player.setObstacles(&obstacleAABBs);
 
@@ -310,7 +469,6 @@ int main() {
 
     // Top-level state machine
     core::GameState gameState = core::GameState::Playing;
-    const sf::Vector2f playerSpawn{1000.f, 1000.f};
 
     int gameOverSelection = 0; // 0 restart, 1 menu, 2 exit
     int mainMenuSelection = 0; // 0 start, 1 exit
@@ -334,6 +492,8 @@ int main() {
         eventBus.reset();
         vampiricFang.reset();
         explosiveShells.reset();
+        generateTerrain();
+        generateObstacles();
         gameState = core::GameState::Playing;
         std::cout << "[Game] Restarted\n";
     };
@@ -354,6 +514,8 @@ int main() {
         eventBus.reset();
         vampiricFang.reset();
         explosiveShells.reset();
+        generateTerrain();
+        generateObstacles();
         gameOverSelection = 0;
         mainMenuSelection = 0;
         roundCompleteSelection = 0;
@@ -363,6 +525,8 @@ int main() {
 
     auto startNextRound = [&]() {
         gameState = core::GameState::Playing;
+        generateTerrain();
+        generateObstacles();
         waveManager.startNextWave();
         std::cout << "[Wave] Wave " << waveManager.waveNumber() << " started!\n";
     };
@@ -476,7 +640,7 @@ int main() {
                     if (key->code == sf::Keyboard::Key::E) {
                         for (auto& l : loot) {
                             if (!l->consumed() && l->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
-                                if (l->itemName() == "hp" || l->itemName() == "coin") continue;
+                                if (l->itemName() == "hp" || l->itemName() == "ammo") continue;
                                 std::cout << "[Loot] Picked up: " << l->itemName()
                                           << " x" << l->value() << "\n";
                                 inventory.addItem(l->itemName(), {.stackSize = l->value()});
@@ -534,7 +698,7 @@ int main() {
             // Auto-pickup: health drops are consumed on contact (no E needed).
             for (auto& l : loot) {
                 if (l->consumed()) continue;
-                const bool isAuto = (l->itemName() == "hp" || l->itemName() == "coin");
+                const bool isAuto = (l->itemName() == "hp" || l->itemName() == "ammo");
                 if (!isAuto) continue;
                 const sf::Vector2f toPlayer = player.getPosition() - l->getPosition();
                 const float distSq = toPlayer.x * toPlayer.x + toPlayer.y * toPlayer.y;
@@ -562,8 +726,10 @@ int main() {
                     const int healed = player.health() - before;
                     std::cout << "[Loot] Auto-picked: hp +" << healed << "\n";
                 } else {
-                    std::cout << "[Loot] Auto-picked: coin x" << l->value() << "\n";
-                    inventory.addItem(l->itemName(), {.stackSize = l->value()});
+                    const int before = ammoCurrent;
+                    ammoCurrent = std::min(ammoMax, ammoCurrent + l->value());
+                    const int gained = ammoCurrent - before;
+                    std::cout << "[Loot] Auto-picked: ammo +" << gained << "\n";
                 }
                 l->consume();
             }
@@ -602,7 +768,7 @@ int main() {
                                     triggerShake(7.f);
                                     waveManager.onEnemyKilled();
                                     loot.push_back(std::make_unique<entities::Loot>(
-                                        enemy->getPosition(), "coin", 5));
+                                        enemy->getPosition(), "ammo", kChaserAmmoDrop));
                                     if (rollChance(kHealthDropChance)) {
                                         loot.push_back(std::make_unique<entities::Loot>(
                                             enemy->getPosition(), "hp", kChaserHealthDrop));
@@ -632,7 +798,7 @@ int main() {
                                     triggerShake(8.f);
                                     waveManager.onEnemyKilled();
                                     loot.push_back(std::make_unique<entities::Loot>(
-                                        shooter->getPosition(), "coin", 10));
+                                        shooter->getPosition(), "ammo", kShooterAmmoDrop));
                                     if (rollChance(kHealthDropChance)) {
                                         loot.push_back(std::make_unique<entities::Loot>(
                                             shooter->getPosition(), "hp", kShooterHealthDrop));
@@ -855,8 +1021,8 @@ int main() {
             for (auto& proj : playerProjectiles) {
                 if (proj->consumed()) continue;
                 const auto projBounds = proj->getGlobalBounds();
-                auto applyHit = [&](auto& target, float kbForce, int coinValue,
-                                    const char* label) {
+                auto applyHit = [&](auto& target, float kbForce, int ammoValue,
+                                     const char* label) {
                     if (!target->isAlive()) return false;
                     if (!projBounds.findIntersection(target->getGlobalBounds()).has_value()) {
                         return false;
@@ -877,8 +1043,10 @@ int main() {
                         triggerShake(7.f);
                         waveManager.onEnemyKilled();
                         loot.push_back(std::make_unique<entities::Loot>(
-                            target->getPosition(), "coin", coinValue));
-                        const int hpDrop = (coinValue >= 10) ? kShooterHealthDrop : kChaserHealthDrop;
+                            target->getPosition(), "ammo", ammoValue));
+                        const int hpDrop = (ammoValue >= kShooterAmmoDrop)
+                            ? kShooterHealthDrop
+                            : kChaserHealthDrop;
                         if (rollChance(kHealthDropChance)) {
                             loot.push_back(std::make_unique<entities::Loot>(
                                 target->getPosition(), "hp", hpDrop));
@@ -889,11 +1057,11 @@ int main() {
                     return true;
                 };
                 for (auto& enemy : enemies) {
-                    if (applyHit(enemy, 220.f, 5, "Chaser")) break;
+                    if (applyHit(enemy, 220.f, kChaserAmmoDrop, "Chaser")) break;
                 }
                 if (proj->consumed()) continue;
                 for (auto& shooter : shooters) {
-                    if (applyHit(shooter, 220.f, 10, "Shooter")) break;
+                    if (applyHit(shooter, 220.f, kShooterAmmoDrop, "Shooter")) break;
                 }
             }
 
@@ -1029,25 +1197,16 @@ int main() {
         // Set camera view (world space)
         window.setView(camera);
 
-        // Grid lines spanning the full world
-        sf::VertexArray grid(sf::PrimitiveType::Lines);
-        for (float x = 0.f; x <= 2000.f; x += 80.f) {
-            grid.append(sf::Vertex{{x, 0.f}, sf::Color(60, 64, 72)});
-            grid.append(sf::Vertex{{x, 2000.f}, sf::Color(60, 64, 72)});
-        }
-        for (float y = 0.f; y <= 2000.f; y += 80.f) {
-            grid.append(sf::Vertex{{0.f, y}, sf::Color(60, 64, 72)});
-            grid.append(sf::Vertex{{2000.f, y}, sf::Color(60, 64, 72)});
-        }
-        window.draw(grid);
+        // Terrain tiles
+        window.draw(terrainMesh);
 
-        // World boundary outline
-        sf::RectangleShape border{{2000.f, 2000.f}};
-        border.setPosition({0.f, 0.f});
-        border.setFillColor(sf::Color::Transparent);
-        border.setOutlineColor(sf::Color(100, 100, 100));
-        border.setOutlineThickness(4.f);
-        window.draw(border);
+         // World boundary outline
+         sf::RectangleShape border{{2000.f, 2000.f}};
+         border.setPosition({0.f, 0.f});
+         border.setFillColor(sf::Color::Transparent);
+         border.setOutlineColor(sf::Color(100, 100, 100));
+         border.setOutlineThickness(4.f);
+         window.draw(border);
 
         // Static obstacles
         for (const auto& obs : obstacles) {
@@ -1139,3 +1298,4 @@ int main() {
     std::cout << "[Game] Shutdown. Kills: " << killCount << "\n";
     return 0;
 }
+

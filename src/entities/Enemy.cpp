@@ -236,8 +236,8 @@ Loot::Loot(const Vector2f& pos, std::string itemName, int value)
         circle_.setFillColor(Color(80, 220, 120));
         circle_.setOutlineColor(Color::Black);
     } else {
-        circle_.setFillColor(Color(255, 215, 0));
-        circle_.setOutlineColor(Color::White);
+        circle_.setFillColor(Color(120, 170, 240));
+        circle_.setOutlineColor(Color(30, 40, 60));
     }
     circle_.setOutlineThickness(1.f);
     circle_.setOrigin({10.f, 10.f});

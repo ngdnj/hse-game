@@ -5,6 +5,8 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <vector>
+#include <cctype>
 
 namespace ui {
 
@@ -13,16 +15,112 @@ namespace {
 constexpr float kBarWidth = 140.f;
 constexpr float kBarHeight = 10.f;
 
+struct Glyph5x7 {
+    char ch;
+    std::array<std::uint8_t, 7> rows;
+};
+
+const std::vector<Glyph5x7>& glyphs5x7() {
+    static const std::vector<Glyph5x7> glyphs{
+        Glyph5x7{'A', {0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001}},
+        Glyph5x7{'B', {0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110}},
+        Glyph5x7{'C', {0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110}},
+        Glyph5x7{'D', {0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110}},
+        Glyph5x7{'E', {0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111}},
+        Glyph5x7{'F', {0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000}},
+        Glyph5x7{'G', {0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01111}},
+        Glyph5x7{'H', {0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001}},
+        Glyph5x7{'I', {0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111}},
+        Glyph5x7{'J', {0b00111, 0b00010, 0b00010, 0b00010, 0b00010, 0b10010, 0b01100}},
+        Glyph5x7{'K', {0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001}},
+        Glyph5x7{'L', {0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111}},
+        Glyph5x7{'M', {0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001}},
+        Glyph5x7{'N', {0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001}},
+        Glyph5x7{'O', {0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110}},
+        Glyph5x7{'P', {0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000}},
+        Glyph5x7{'Q', {0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101}},
+        Glyph5x7{'R', {0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001}},
+        Glyph5x7{'S', {0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110}},
+        Glyph5x7{'T', {0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100}},
+        Glyph5x7{'U', {0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110}},
+        Glyph5x7{'V', {0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100}},
+        Glyph5x7{'W', {0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010}},
+        Glyph5x7{'X', {0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001}},
+        Glyph5x7{'Y', {0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100}},
+        Glyph5x7{'Z', {0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111}},
+        Glyph5x7{'0', {0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110}},
+        Glyph5x7{'1', {0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110}},
+        Glyph5x7{'2', {0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111}},
+        Glyph5x7{'3', {0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110}},
+        Glyph5x7{'4', {0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010}},
+        Glyph5x7{'5', {0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110}},
+        Glyph5x7{'6', {0b01110, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110}},
+        Glyph5x7{'7', {0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000}},
+        Glyph5x7{'8', {0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110}},
+        Glyph5x7{'9', {0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110}},
+        Glyph5x7{':', {0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000}},
+        Glyph5x7{'/', {0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b00000, 0b00000}},
+        Glyph5x7{'-', {0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000}},
+        Glyph5x7{'+', {0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000}},
+        Glyph5x7{'|', {0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100}},
+        Glyph5x7{'(', {0b00010, 0b00100, 0b01000, 0b01000, 0b01000, 0b00100, 0b00010}},
+        Glyph5x7{')', {0b01000, 0b00100, 0b00010, 0b00010, 0b00010, 0b00100, 0b01000}}
+     };
+     return glyphs;
+ }
+
+const Glyph5x7* findGlyph(char c) {
+    for (const auto& g : glyphs5x7()) {
+        if (g.ch == c) return &g;
+    }
+    return nullptr;
+}
+
+void drawBitmapText(sf::RenderTarget& target, sf::Vector2f pos,
+                    const std::string& text, float scale, sf::Color color) {
+    sf::RectangleShape px({scale, scale});
+    px.setFillColor(color);
+    float cursorX = pos.x;
+    const float cursorY = pos.y;
+    for (char raw : text) {
+        const char c = static_cast<char>(std::toupper(static_cast<unsigned char>(raw)));
+        if (c == ' ') {
+            cursorX += 4.f * scale;
+            continue;
+        }
+        const auto* glyph = findGlyph(c);
+        if (!glyph) {
+            cursorX += 6.f * scale;
+            continue;
+        }
+        for (std::size_t row = 0; row < glyph->rows.size(); ++row) {
+            const std::uint8_t bits = glyph->rows[row];
+            for (int col = 0; col < 5; ++col) {
+                if ((bits >> (4 - col)) & 0x1) {
+                    px.setPosition({cursorX + col * scale, cursorY + row * scale});
+                    target.draw(px);
+                }
+            }
+        }
+        cursorX += 6.f * scale;
+    }
+}
+
 } // namespace
 
 HUD::HUD(const std::string& fontPath) {
     hasFont_ = font_.openFromFile(fontPath);
     if (!hasFont_) {
         // Fallbacks for non-macOS environments (the default path is macOS).
-        static const std::array<const char*, 3> kFallbacks{
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", // common on Linux
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",             // some distros
-            "/usr/share/fonts/truetype/freefont/FreeSans.ttf"  // alternative
+        static const std::array<const char*, 8> kFallbacks{
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",        // common on Linux
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",                    // some distros
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",        // alternative
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+            "/usr/share/fonts/truetype/ubuntu/Ubuntu-Regular.ttf"
         };
         for (const auto* p : kFallbacks) {
             if (font_.openFromFile(p)) {
@@ -62,8 +160,15 @@ void HUD::draw(sf::RenderTarget& target, const HudState& state) const {
              "Loot: " + std::to_string(state.lootOnGround) +
              " | Inv: " + std::to_string(invUsed) + "/" + std::to_string(invCap), 16);
 
-    drawHealthBar(target, {10.f, 92.f}, state.playerHealth, state.playerMaxHealth);
-    drawAmmoBar(target, {10.f, 108.f}, state.ammoCurrent, state.ammoMax, state.ammoInfinite);
+    const sf::Vector2u winSz = target.getSize();
+    const float barH = kBarHeight + 4.f;
+    const float bottomMargin = 18.f;
+    const float barGap = 8.f;
+    const float barX = (static_cast<float>(winSz.x) - kBarWidth) * 0.5f;
+    const float ammoY = static_cast<float>(winSz.y) - bottomMargin - barH;
+    const float hpY = ammoY - barH - barGap;
+    drawHealthBar(target, {barX, hpY}, state.playerHealth, state.playerMaxHealth);
+    drawAmmoBar(target, {barX, ammoY}, state.ammoCurrent, state.ammoMax, state.ammoInfinite);
 
     int invY = 132;
     if (state.inventory) {
@@ -98,7 +203,11 @@ void HUD::draw(sf::RenderTarget& target, const HudState& state) const {
 
 void HUD::drawText(sf::RenderTarget& target, sf::Vector2f pos,
                    const std::string& str, unsigned size) const {
-    if (!hasFont_) return;
+    if (!hasFont_) {
+        const float scale = std::max(1.f, std::round(static_cast<float>(size) / 7.f));
+        drawBitmapText(target, pos, str, scale, sf::Color::White);
+        return;
+    }
     sf::Text text(font_, sf::String(str), size);
     text.setFillColor(sf::Color::White);
     text.setOutlineColor(sf::Color::Black);
@@ -130,7 +239,7 @@ void HUD::drawDashCooldown(sf::RenderTarget& target, sf::Vector2f pos,
 }
 
 void HUD::drawHealthBar(sf::RenderTarget& target, sf::Vector2f pos,
-                         int hp, int maxHp) const {
+                          int hp, int maxHp) const {
     const float ratio = maxHp > 0
         ? std::clamp(static_cast<float>(hp) / static_cast<float>(maxHp), 0.f, 1.f)
         : 0.f;
@@ -150,12 +259,12 @@ void HUD::drawHealthBar(sf::RenderTarget& target, sf::Vector2f pos,
     fill.setFillColor(color);
     target.draw(fill);
 
-    drawText(target, {pos.x + kBarWidth + 8.f, pos.y - 2.f},
-             "HP " + std::to_string(hp) + "/" + std::to_string(maxHp), 12);
+    drawText(target, {pos.x, pos.y - 14.f},
+             "HP: " + std::to_string(hp) + "/" + std::to_string(maxHp), 12);
 }
 
 void HUD::drawAmmoBar(sf::RenderTarget& target, sf::Vector2f pos,
-                      int ammo, int maxAmmo, bool infinite) const {
+                       int ammo, int maxAmmo, bool infinite) const {
     const float ratio = (maxAmmo > 0)
         ? std::clamp(static_cast<float>(ammo) / static_cast<float>(maxAmmo), 0.f, 1.f)
         : (infinite ? 1.f : 0.f);
@@ -173,12 +282,12 @@ void HUD::drawAmmoBar(sf::RenderTarget& target, sf::Vector2f pos,
     target.draw(fill);
 
     if (infinite) {
-        drawText(target, {pos.x + kBarWidth + 8.f, pos.y - 2.f}, "Ammo INF", 12);
+        drawText(target, {pos.x, pos.y - 14.f}, "AMMO: INF", 12);
     } else if (maxAmmo > 0) {
-        drawText(target, {pos.x + kBarWidth + 8.f, pos.y - 2.f},
-                 "Ammo " + std::to_string(ammo) + "/" + std::to_string(maxAmmo), 12);
+        drawText(target, {pos.x, pos.y - 14.f},
+                 "AMMO: " + std::to_string(ammo) + "/" + std::to_string(maxAmmo), 12);
     } else {
-        drawText(target, {pos.x + kBarWidth + 8.f, pos.y - 2.f}, "Ammo --", 12);
+        drawText(target, {pos.x, pos.y - 14.f}, "AMMO: --", 12);
     }
 }
 
@@ -284,7 +393,18 @@ void HUD::drawButton(sf::RenderTarget& target, const sf::FloatRect& r,
     btn.setOutlineThickness(selected ? 3.f : 2.f);
     target.draw(btn);
 
-    if (!hasFont_) return;
+    if (!hasFont_) {
+        const float scale = 3.f;
+        const float textW = static_cast<float>(label.size()) * 6.f * scale;
+        const float textH = 7.f * scale;
+        const sf::Vector2f pos{
+            r.position.x + (r.size.x - textW) * 0.5f,
+            r.position.y + (r.size.y - textH) * 0.5f
+        };
+        drawBitmapText(target, pos, label, scale, sf::Color::White);
+        return;
+    }
+
     sf::Text t(font_, sf::String(label), 20);
     t.setFillColor(sf::Color::White);
     t.setOutlineColor(sf::Color::Black);
@@ -320,7 +440,7 @@ void HUD::drawMainMenu(sf::RenderTarget& target, const HudState& state) const {
     drawText(target, {panelPos.x + 20.f, panelPos.y + panelSize.y * 0.08f}, "MAIN MENU (TODO)", 28);
     drawText(target, {panelPos.x + 20.f, panelPos.y + panelSize.y * 0.22f}, "This is a placeholder screen.", 16);
 
-    drawButton(target, state.mainMenuBtnStart, "Start", state.mainMenuSelected == 0);
+    drawButton(target, state.mainMenuBtnStart, "Return", state.mainMenuSelected == 0);
     drawButton(target, state.mainMenuBtnExit, "Exit", state.mainMenuSelected == 1);
 }
 

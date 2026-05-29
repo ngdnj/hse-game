@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <vector>
 #include <functional>
+#include <optional>
+#include <random>
 
 namespace core {
 
@@ -20,8 +22,10 @@ struct WaveState {
 
 class WaveManager {
 public:
-    explicit WaveManager(float waveBreakDuration = 3.f)
+    explicit WaveManager(float waveBreakDuration = 3.f,
+                         std::optional<std::uint32_t> seed = std::nullopt)
         : waveBreakDuration_(waveBreakDuration)
+        , rng_(seed ? *seed : std::random_device{}())
     {}
 
     bool startNextWave() {
@@ -82,12 +86,18 @@ public:
     }
 
 private:
-    [[nodiscard]] static int enemiesForWave(int w) {
-        return std::min(3 + w * 2, 20);
+    [[nodiscard]] int enemiesForWave(int w) {
+        const int base = std::min(4 + w * 3, 20);
+        const int variance = (base >= 12) ? 3 : 2;
+        const int minCount = std::max(3, base - variance);
+        const int maxCount = std::min(20, base + variance);
+        std::uniform_int_distribution<int> dist(minCount, maxCount);
+        return dist(rng_);
     }
 
     WaveState state_;
     float waveBreakDuration_{3.f};
+    std::mt19937 rng_;
 };
 
 } // namespace core
