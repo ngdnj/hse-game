@@ -248,11 +248,25 @@ FloatRect Loot::getLocalBounds() const {
 }
 
 void Loot::update(float dt) {
-    (void)dt;
-    // Loot just sits there; could add bobbing/pickup animation here
+    if (attracted_) {
+        pulse_ += dt * 6.f;
+        if (pulse_ > 6.283f) pulse_ -= 6.283f;
+    } else if (pulse_ > 0.f) {
+        pulse_ = std::max(0.f, pulse_ - dt * 6.f);
+    }
 }
 
 void Loot::onDraw(sf::RenderTarget& target, sf::RenderStates states) const {
+    if (attracted_) {
+        const float pulse = 0.5f + 0.5f * std::sin(pulse_);
+        const float glowR = 16.f + 3.f * pulse;
+        const std::uint8_t alpha = static_cast<std::uint8_t>(60.f + 80.f * pulse);
+        sf::CircleShape glow(glowR);
+        glow.setOrigin({glowR, glowR});
+        glow.setPosition(getPosition());
+        glow.setFillColor(sf::Color(255, 220, 120, alpha));
+        target.draw(glow, states);
+    }
     target.draw(circle_, states);
 }
 

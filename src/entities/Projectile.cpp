@@ -1,4 +1,5 @@
 #include "entities/Projectile.hpp"
+#include <cmath>
 
 using namespace sf;
 
@@ -23,6 +24,12 @@ Projectile::Projectile(Vector2f pos, Vector2f direction, float speed, int damage
     glow_.setOrigin({glowR, glowR});
 }
 
+void Projectile::setTint(const Color& core, const Color& glow, const Color& trail) noexcept {
+    core_.setFillColor(core);
+    glow_.setFillColor(glow);
+    trailColor_ = trail;
+}
+
 FloatRect Projectile::getLocalBounds() const {
     return {{-kRadius, -kRadius}, {kRadius * 2.f, kRadius * 2.f}};
 }
@@ -31,7 +38,48 @@ void Projectile::update(float dt) {
     if (consumed_) return;
     trail_.push_front(getPosition());
     if (trail_.size() > kTrailLength) trail_.pop_back();
-    move(velocity_ * dt);
+
+    if (accelPerSec_ > 0.f) {
+        const float speedSq = velocity_.x * velocity_.x + velocity_.y * velocity_.y;
+        if (speedSq > 0.0001f) {
+            const float speed = std::sqrt(speedSq);
+            const float newSpeed = speed + accelPerSec_ * dt;
+            const float scale = newSpeed / speed;
+            velocity_.x *= scale;
+            velocity_.y *= scale;
+        }
+    }
+
+    sf::Vector2f desired = velocity_ * dt;
+    bool bounced = false;
+
+
+    if (obstacles_ && !obstacles_->empty()) {
+        const auto gb = getGlobalBounds();
+        core::AABB entityAABB = core::fromFloatRect(gb);
+        const sf::Vector2f resolved = core::resolveMovement(entityAABB, desired, *obstacles_);
+        const bool blockedX = (desired.x != 0.f && resolved.x == 0.f);
+        const bool blockedY = (desired.y != 0.f && resolved.y == 0.f);
+        if (blockedX) {
+            velocity_.x = -velocity_.x;
+            bounced = true;
+        }
+        if (blockedY) {
+            velocity_.y = -velocity_.y;
+            bounced = true;
+        }
+        desired = resolved;
+    }
+
+    if (bounced) {
+        ++bounceCount_;
+        if (bounceCount_ > maxBounces_) {
+            markConsumed();
+            return;
+        }
+    }
+
+    move(desired);
 }
 
 void Projectile::onDraw(RenderTarget& target, RenderStates states) const {
@@ -46,7 +94,8 @@ void Projectile::onDraw(RenderTarget& target, RenderStates states) const {
         CircleShape ghost(kRadius * (0.4f + 0.5f * t));
         ghost.setOrigin({ghost.getRadius(), ghost.getRadius()});
         ghost.setPosition(trail_[i]);
-        ghost.setFillColor(Color(255, 180, 40, static_cast<std::uint8_t>(180.f * t)));
+        ghost.setFillColor(Color(trailColor_.r, trailColor_.g, trailColor_.b,
+                                 static_cast<std::uint8_t>(trailColor_.a * t)));
         target.draw(ghost, worldStates);
     }
 

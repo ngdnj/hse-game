@@ -28,11 +28,26 @@ namespace {
 constexpr float kFixedDt = 1.f / 60.f;  // 60 Hz physics
 constexpr int kMaxFrameSkip = 5;        // prevent spiral of death
 constexpr float kCameraSmoothing = 0.12f; // 0..1, lower = smoother/slower follow
+constexpr float kLootPickupRadius = 18.f;
+constexpr float kLootAttractRadius = 140.f;
+constexpr float kLootAttractSpeed = 240.f;
+constexpr int kDefaultAmmoMax = 9;
+constexpr float kChaserSpeedBase = 100.f;
+constexpr float kShooterSpeedBase = 70.f;
+constexpr float kEnemySpeedVariance = 0.12f;
+constexpr float kEnemySeparationStrength = 0.65f;
+constexpr float kEnemySeparationMaxPush = 40.f;
 
 // Simple pseudo-random for spawn positions
 std::mt19937& rng() {
     static std::mt19937 rng_{std::random_device{}()};
     return rng_;
+}
+
+float variedSpeed(float base) {
+    std::uniform_real_distribution<float> dist{-kEnemySpeedVariance, kEnemySpeedVariance};
+    const float scaled = base * (1.f + dist(rng()));
+    return std::max(10.f, scaled);
 }
 
 // Loot drops
@@ -67,6 +82,18 @@ void clampViewToBounds(sf::View& view, const sf::FloatRect& worldBounds) {
         worldBounds.position.x + worldBounds.size.x - halfSize.x,
         worldBounds.position.y + worldBounds.size.y - halfSize.y
     };
+
+    // If the view is larger than the world, lock to the world center to avoid
+    // invalid clamp ranges (hi < lo).
+    if (maxPos.x < minPos.x || maxPos.y < minPos.y) {
+        const sf::Vector2f worldCenter{
+            worldBounds.position.x + worldBounds.size.x * 0.5f,
+            worldBounds.position.y + worldBounds.size.y * 0.5f
+        };
+        view.setCenter(worldCenter);
+        return;
+    }
+
     const sf::Vector2f currentCenter = view.getCenter();
     view.setCenter({
         std::clamp(currentCenter.x, minPos.x, maxPos.x),
@@ -88,14 +115,16 @@ struct MenuButtons2 {
 MenuButtons3 layoutGameOverButtons(const sf::Vector2u& winSz) {
     const float winW = static_cast<float>(winSz.x);
     const float winH = static_cast<float>(winSz.y);
-    const sf::Vector2f panelSize{420.f, 260.f};
+    const float panelW = std::clamp(winW * 0.6f, 300.f, 520.f);
+    const float panelH = std::clamp(winH * 0.45f, 220.f, 320.f);
+    const sf::Vector2f panelSize{panelW, panelH};
     const sf::Vector2f panelPos{(winW - panelSize.x) * 0.5f, (winH - panelSize.y) * 0.5f};
 
-    const float btnW = 240.f;
-    const float btnH = 44.f;
+    const float btnW = panelSize.x * 0.6f;
+    const float btnH = std::clamp(panelSize.y * 0.14f, 36.f, 52.f);
     const float x = panelPos.x + (panelSize.x - btnW) * 0.5f;
-    const float y0 = panelPos.y + 120.f;
-    const float gap = 12.f;
+    const float y0 = panelPos.y + panelSize.y * 0.45f;
+    const float gap = std::clamp(panelSize.y * 0.06f, 8.f, 14.f);
 
     return {
         .b0 = {{x, y0}, {btnW, btnH}},
@@ -107,14 +136,16 @@ MenuButtons3 layoutGameOverButtons(const sf::Vector2u& winSz) {
 MenuButtons2 layoutMainMenuButtons(const sf::Vector2u& winSz) {
     const float winW = static_cast<float>(winSz.x);
     const float winH = static_cast<float>(winSz.y);
-    const sf::Vector2f panelSize{520.f, 320.f};
+    const float panelW = std::clamp(winW * 0.65f, 340.f, 560.f);
+    const float panelH = std::clamp(winH * 0.5f, 240.f, 360.f);
+    const sf::Vector2f panelSize{panelW, panelH};
     const sf::Vector2f panelPos{(winW - panelSize.x) * 0.5f, (winH - panelSize.y) * 0.5f};
 
-    const float btnW = 240.f;
-    const float btnH = 44.f;
+    const float btnW = panelSize.x * 0.6f;
+    const float btnH = std::clamp(panelSize.y * 0.14f, 36.f, 52.f);
     const float x = panelPos.x + (panelSize.x - btnW) * 0.5f;
-    const float y0 = panelPos.y + 140.f;
-    const float gap = 12.f;
+    const float y0 = panelPos.y + panelSize.y * 0.5f;
+    const float gap = std::clamp(panelSize.y * 0.06f, 8.f, 14.f);
 
     return {
         .b0 = {{x, y0}, {btnW, btnH}},
@@ -125,14 +156,16 @@ MenuButtons2 layoutMainMenuButtons(const sf::Vector2u& winSz) {
 MenuButtons2 layoutRoundCompleteButtons(const sf::Vector2u& winSz) {
     const float winW = static_cast<float>(winSz.x);
     const float winH = static_cast<float>(winSz.y);
-    const sf::Vector2f panelSize{520.f, 260.f};
+    const float panelW = std::clamp(winW * 0.6f, 340.f, 560.f);
+    const float panelH = std::clamp(winH * 0.45f, 220.f, 320.f);
+    const sf::Vector2f panelSize{panelW, panelH};
     const sf::Vector2f panelPos{(winW - panelSize.x) * 0.5f, (winH - panelSize.y) * 0.5f};
 
-    const float btnW = 260.f;
-    const float btnH = 44.f;
+    const float btnW = panelSize.x * 0.62f;
+    const float btnH = std::clamp(panelSize.y * 0.14f, 36.f, 52.f);
     const float x = panelPos.x + (panelSize.x - btnW) * 0.5f;
-    const float y0 = panelPos.y + 110.f;
-    const float gap = 12.f;
+    const float y0 = panelPos.y + panelSize.y * 0.45f;
+    const float gap = std::clamp(panelSize.y * 0.06f, 8.f, 14.f);
 
     return {
         .b0 = {{x, y0}, {btnW, btnH}},
@@ -153,6 +186,11 @@ int main() {
     sf::View camera;
     camera.setSize({1200.f, 800.f});
     camera.setCenter({600.f, 400.f});
+
+    // UI view (screen-space, updated on resize)
+    sf::View uiView(sf::FloatRect({0.f, 0.f},
+                                 {static_cast<float>(window.getSize().x),
+                                  static_cast<float>(window.getSize().y)}));
 
     // Resource manager for shapes
     core::ResourceManager res;
@@ -208,6 +246,8 @@ int main() {
     enemyDynamicObstacles.reserve(256);
 
     int killCount = 0;
+    int ammoMax = kDefaultAmmoMax;
+    int ammoCurrent = kDefaultAmmoMax;
 
     // Wave system
     core::WaveManager waveManager(4.f);
@@ -287,6 +327,7 @@ int main() {
         playerProjectiles.clear();
         inventory = core::Inventory(20);
         killCount = 0;
+        ammoCurrent = ammoMax;
         waveManager = core::WaveManager(4.f);
         waveManager.startNextWave();
         shop = core::Shop{};
@@ -338,10 +379,21 @@ int main() {
             if (eventOpt->is<sf::Event::Closed>()) {
                 window.close();
             }
+            if (auto* resized = eventOpt->getIf<sf::Event::Resized>()) {
+                const sf::Vector2f newSize{
+                    static_cast<float>(resized->size.x),
+                    static_cast<float>(resized->size.y)
+                };
+                camera.setSize(newSize);
+                clampViewToBounds(camera, worldBounds);
+
+                uiView.setSize(newSize);
+                uiView.setCenter({newSize.x * 0.5f, newSize.y * 0.5f});
+            }
             if (auto* mouse = eventOpt->getIf<sf::Event::MouseButtonPressed>()) {
                 if (mouse->button == sf::Mouse::Button::Left) {
                     const auto mousePx = sf::Vector2i{mouse->position};
-                    const sf::Vector2f mouseUi = window.mapPixelToCoords(mousePx, window.getDefaultView());
+                    const sf::Vector2f mouseUi = window.mapPixelToCoords(mousePx, uiView);
 
                     if (gameState == core::GameState::GameOver) {
                         const auto btn = layoutGameOverButtons(window.getSize());
@@ -424,16 +476,10 @@ int main() {
                     if (key->code == sf::Keyboard::Key::E) {
                         for (auto& l : loot) {
                             if (!l->consumed() && l->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
-                                if (l->itemName() == "hp") {
-                                    const int before = player.health();
-                                    player.heal(l->value());
-                                    const int healed = player.health() - before;
-                                    std::cout << "[Loot] Picked up: hp +" << healed << "\n";
-                                } else {
-                                    std::cout << "[Loot] Picked up: " << l->itemName()
-                                              << " x" << l->value() << "\n";
-                                    inventory.addItem(l->itemName(), {.stackSize = l->value()});
-                                }
+                                if (l->itemName() == "hp" || l->itemName() == "coin") continue;
+                                std::cout << "[Loot] Picked up: " << l->itemName()
+                                          << " x" << l->value() << "\n";
+                                inventory.addItem(l->itemName(), {.stackSize = l->value()});
                                 l->consume();
                             }
                         }
@@ -482,108 +528,158 @@ int main() {
             enemyDynamicObstacles.clear();
             enemyDynamicObstacles.insert(enemyDynamicObstacles.end(),
                                          obstacleAABBs.begin(), obstacleAABBs.end());
-            enemyDynamicObstacles.push_back(core::fromFloatRect(player.getGlobalBounds()));
+            const core::AABB playerAabb = core::fromFloatRect(player.getGlobalBounds());
+            enemyDynamicObstacles.push_back(playerAabb);
 
             // Auto-pickup: health drops are consumed on contact (no E needed).
             for (auto& l : loot) {
                 if (l->consumed()) continue;
-                if (l->itemName() != "hp") continue;
-                if (!l->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
-                    continue;
+                const bool isAuto = (l->itemName() == "hp" || l->itemName() == "coin");
+                if (!isAuto) continue;
+                const sf::Vector2f toPlayer = player.getPosition() - l->getPosition();
+                const float distSq = toPlayer.x * toPlayer.x + toPlayer.y * toPlayer.y;
+                const float attractSq = kLootAttractRadius * kLootAttractRadius;
+                const float pickupSq = kLootPickupRadius * kLootPickupRadius;
+
+                if (distSq <= attractSq) {
+                    l->setAttracted(true);
+                    const float dist = std::sqrt(distSq);
+                    if (dist > 0.001f) {
+                        const sf::Vector2f dir{toPlayer.x / dist, toPlayer.y / dist};
+                        const float t = 1.f - std::min(dist / kLootAttractRadius, 1.f);
+                        const float speed = kLootAttractSpeed * (0.4f + 0.6f * t);
+                        l->move({dir.x * speed * kFixedDt, dir.y * speed * kFixedDt});
+                    }
+                } else {
+                    l->setAttracted(false);
                 }
-                const int before = player.health();
-                player.heal(l->value());
-                const int healed = player.health() - before;
-                std::cout << "[Loot] Auto-picked: hp +" << healed << "\n";
+
+                if (distSq > pickupSq) continue;
+
+                if (l->itemName() == "hp") {
+                    const int before = player.health();
+                    player.heal(l->value());
+                    const int healed = player.health() - before;
+                    std::cout << "[Loot] Auto-picked: hp +" << healed << "\n";
+                } else {
+                    std::cout << "[Loot] Auto-picked: coin x" << l->value() << "\n";
+                    inventory.addItem(l->itemName(), {.stackSize = l->value()});
+                }
                 l->consume();
             }
 
             // Combat: fire active weapon if Space is held and weapon is ready.
             if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space)
                 && player.weapon() && player.weapon()->canFire()) {
-                auto result = player.tryFire();
-                const float kb = result.knockbackMultiplier;
-                if (result.hasMeleeHitbox) {
-                    const auto& hitbox = result.meleeHitbox;
-                    for (auto& enemy : enemies) {
-                        if (!enemy->isAlive()) continue;
-                        if (hitbox.findIntersection(enemy->getGlobalBounds()).has_value()) {
-                            enemy->takeDamage(player.attackDamage());
-                            triggerShake(4.f);
-                            const sf::Vector2f enemyPos = enemy->getPosition();
-                            const sf::Vector2f playerPos = player.getPosition();
-                            const sf::Vector2f toEnemy = enemyPos - playerPos;
-                            const float dist = std::sqrt(toEnemy.x * toEnemy.x + toEnemy.y * toEnemy.y);
-                            if (dist > 0.001f) {
-                                const sf::Vector2f dir{toEnemy.x / dist, toEnemy.y / dist};
-                                enemy->applyKnockback({dir.x * 300.f * kb, dir.y * 300.f * kb});
-                            }
-                            std::cout << "[Combat] Hit chaser! HP: "
-                                      << enemy->health() << "/" << enemy->maxHealth() << "\n";
-                            if (enemy->isDead()) {
-                                std::cout << "[Combat] Chaser killed!\n";
-                                eventBus.emit(core::EnemyKilledEvent{++killCount});
-                                eventBus.emit(core::AreaDamageRequest{
-                                    enemy->getPosition(), 70.f, 20, player.getPosition()});
-                                triggerShake(7.f);
-                                waveManager.onEnemyKilled();
-                                loot.push_back(std::make_unique<entities::Loot>(
-                                    enemy->getPosition(), "coin", 5));
-                                if (rollChance(kHealthDropChance)) {
+                const bool isShotgun = (player.weapon()->name() == "Shotgun");
+                if (isShotgun && ammoCurrent <= 0) {
+                    // Out of ammo; skip firing.
+                } else {
+                    auto result = player.tryFire();
+                    const float kb = result.knockbackMultiplier;
+                    if (result.hasMeleeHitbox) {
+                        const auto& hitbox = result.meleeHitbox;
+                        for (auto& enemy : enemies) {
+                            if (!enemy->isAlive()) continue;
+                            if (hitbox.findIntersection(enemy->getGlobalBounds()).has_value()) {
+                                enemy->takeDamage(player.attackDamage());
+                                triggerShake(4.f);
+                                const sf::Vector2f enemyPos = enemy->getPosition();
+                                const sf::Vector2f playerPos = player.getPosition();
+                                const sf::Vector2f toEnemy = enemyPos - playerPos;
+                                const float dist = std::sqrt(toEnemy.x * toEnemy.x + toEnemy.y * toEnemy.y);
+                                if (dist > 0.001f) {
+                                    const sf::Vector2f dir{toEnemy.x / dist, toEnemy.y / dist};
+                                    enemy->applyKnockback({dir.x * 300.f * kb, dir.y * 300.f * kb});
+                                }
+                                std::cout << "[Combat] Hit chaser! HP: "
+                                          << enemy->health() << "/" << enemy->maxHealth() << "\n";
+                                if (enemy->isDead()) {
+                                    std::cout << "[Combat] Chaser killed!\n";
+                                    eventBus.emit(core::EnemyKilledEvent{++killCount});
+                                    eventBus.emit(core::AreaDamageRequest{
+                                        enemy->getPosition(), 70.f, 20, player.getPosition()});
+                                    triggerShake(7.f);
+                                    waveManager.onEnemyKilled();
                                     loot.push_back(std::make_unique<entities::Loot>(
-                                        enemy->getPosition(), "hp", kChaserHealthDrop));
+                                        enemy->getPosition(), "coin", 5));
+                                    if (rollChance(kHealthDropChance)) {
+                                        loot.push_back(std::make_unique<entities::Loot>(
+                                            enemy->getPosition(), "hp", kChaserHealthDrop));
+                                    }
+                                }
+                            }
+                        }
+                        for (auto& shooter : shooters) {
+                            if (!shooter->isAlive()) continue;
+                            if (hitbox.findIntersection(shooter->getGlobalBounds()).has_value()) {
+                                shooter->takeDamage(player.attackDamage());
+                                triggerShake(4.f);
+                                const sf::Vector2f shooterPos = shooter->getPosition();
+                                const sf::Vector2f toShooter = shooterPos - player.getPosition();
+                                const float dist = std::sqrt(toShooter.x * toShooter.x + toShooter.y * toShooter.y);
+                                if (dist > 0.001f) {
+                                    const sf::Vector2f dir{toShooter.x / dist, toShooter.y / dist};
+                                    shooter->applyKnockback({dir.x * 250.f * kb, dir.y * 250.f * kb});
+                                }
+                                std::cout << "[Combat] Hit shooter! HP: "
+                                          << shooter->health() << "/" << shooter->maxHealth() << "\n";
+                                if (shooter->isDead()) {
+                                    std::cout << "[Combat] Shooter killed!\n";
+                                    eventBus.emit(core::EnemyKilledEvent{++killCount});
+                                    eventBus.emit(core::AreaDamageRequest{
+                                        shooter->getPosition(), 70.f, 20, player.getPosition()});
+                                    triggerShake(8.f);
+                                    waveManager.onEnemyKilled();
+                                    loot.push_back(std::make_unique<entities::Loot>(
+                                        shooter->getPosition(), "coin", 10));
+                                    if (rollChance(kHealthDropChance)) {
+                                        loot.push_back(std::make_unique<entities::Loot>(
+                                            shooter->getPosition(), "hp", kShooterHealthDrop));
+                                    }
                                 }
                             }
                         }
                     }
-                    for (auto& shooter : shooters) {
-                        if (!shooter->isAlive()) continue;
-                        if (hitbox.findIntersection(shooter->getGlobalBounds()).has_value()) {
-                            shooter->takeDamage(player.attackDamage());
-                            triggerShake(4.f);
-                            const sf::Vector2f shooterPos = shooter->getPosition();
-                            const sf::Vector2f toShooter = shooterPos - player.getPosition();
-                            const float dist = std::sqrt(toShooter.x * toShooter.x + toShooter.y * toShooter.y);
-                            if (dist > 0.001f) {
-                                const sf::Vector2f dir{toShooter.x / dist, toShooter.y / dist};
-                                shooter->applyKnockback({dir.x * 250.f * kb, dir.y * 250.f * kb});
-                            }
-                            std::cout << "[Combat] Hit shooter! HP: "
-                                      << shooter->health() << "/" << shooter->maxHealth() << "\n";
-                            if (shooter->isDead()) {
-                                std::cout << "[Combat] Shooter killed!\n";
-                                eventBus.emit(core::EnemyKilledEvent{++killCount});
-                                eventBus.emit(core::AreaDamageRequest{
-                                    shooter->getPosition(), 70.f, 20, player.getPosition()});
-                                triggerShake(8.f);
-                                waveManager.onEnemyKilled();
-                                loot.push_back(std::make_unique<entities::Loot>(
-                                    shooter->getPosition(), "coin", 10));
-                                if (rollChance(kHealthDropChance)) {
-                                    loot.push_back(std::make_unique<entities::Loot>(
-                                        shooter->getPosition(), "hp", kShooterHealthDrop));
-                                }
-                            }
-                        }
+                    for (auto& proj : result.projectiles) {
+                        proj->setObstacles(&obstacleAABBs);
+                        proj->setMaxBounces(2);
+                        playerProjectiles.push_back(std::move(proj));
                     }
-                }
-                for (auto& proj : result.projectiles) {
-                    playerProjectiles.push_back(std::move(proj));
-                }
-                if (!result.projectiles.empty() || result.hasMeleeHitbox) {
-                    // Weak shake just for firing weight on shotgun.
-                    triggerShake(result.hasMeleeHitbox ? 0.f : 5.f);
+                    if (!result.projectiles.empty() || result.hasMeleeHitbox) {
+                        if (isShotgun && !result.projectiles.empty()) {
+                            ammoCurrent = std::max(0, ammoCurrent - 1);
+                        }
+                        // Weak shake just for firing weight on shotgun.
+                        triggerShake(result.hasMeleeHitbox ? 0.f : 5.f);
+                    }
                 }
             }
+
+            std::vector<std::vector<core::AABB>> enemyObstacleLists(enemies.size());
+            std::vector<std::vector<core::AABB>> shooterObstacleLists(shooters.size());
 
             // Player position reference for enemy AI
             const sf::Vector2f playerPos = player.getPosition();
 
             // Enemies
-            for (auto& enemy : enemies) {
+            for (std::size_t i = 0; i < enemies.size(); ++i) {
+                auto& enemy = enemies[i];
                 if (!enemy->isAlive()) continue;
                 enemy->setPlayerPosition(&playerPos);
-                enemy->setObstacles(&enemyDynamicObstacles);
+
+                auto& obs = enemyObstacleLists[i];
+                obs = enemyDynamicObstacles;
+                for (std::size_t j = 0; j < enemies.size(); ++j) {
+                    if (i == j || !enemies[j]->isAlive()) continue;
+                    obs.push_back(core::fromFloatRect(enemies[j]->getGlobalBounds()));
+                }
+                for (const auto& s : shooters) {
+                    if (s && s->isAlive()) {
+                        obs.push_back(core::fromFloatRect(s->getGlobalBounds()));
+                    }
+                }
+                enemy->setObstacles(&obs);
                 enemy->update(kFixedDt);
             }
 
@@ -605,38 +701,12 @@ int main() {
                     const float dot = atk->direction.x * dirToPlayer.x + atk->direction.y * dirToPlayer.y;
                     const float cosHalf = std::cos(atk->halfAngleRad);
                     if (dot >= cosHalf) {
-                    player.takeDamage(atk->damage);
-                    triggerShake(9.f);
-                    std::cout << "[Combat] Player hit by chaser melee! HP: "
-                              << player.health() << "/" << player.maxHealth() << "\n";
-                    if (player.isDead()) {
-                        gameState = core::GameState::GameOver;
-                        std::cout << "[Game] Player died -- GAME OVER\n";
-                    }
-                    }
-                }
-            }
-
-            // Shooters
-            for (auto& shooter : shooters) {
-                if (!shooter->isAlive()) continue;
-                shooter->setPlayerPosition(&playerPos);
-                shooter->setObstacles(&enemyDynamicObstacles);
-                shooter->update(kFixedDt);
-            }
-
-            // Projectile-player collision
-            for (auto& shooter : shooters) {
-                for (auto& proj : shooter->projectiles()) {
-                    if (!proj->consumed() && proj->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
-                        player.takeDamage(proj->damage());
-                        triggerShake(10.f);
-                        std::cout << "[Combat] Player hit by projectile! HP: "
+                        player.takeDamage(atk->damage);
+                        triggerShake(9.f);
+                        std::cout << "[Combat] Player hit by chaser melee! HP: "
                                   << player.health() << "/" << player.maxHealth() << "\n";
-                        proj->markConsumed();
                         if (player.isDead()) {
                             gameState = core::GameState::GameOver;
-                            gameOverSelection = 0;
                             gameOverSelection = 0;
                             std::cout << "[Game] Player died -- GAME OVER\n";
                         }
@@ -644,7 +714,143 @@ int main() {
                 }
             }
 
-            // Player projectiles (shotgun pellets) — update + collide vs enemies
+            // Shooters
+            for (std::size_t i = 0; i < shooters.size(); ++i) {
+                auto& shooter = shooters[i];
+                if (!shooter->isAlive()) continue;
+                shooter->setPlayerPosition(&playerPos);
+
+                auto& obs = shooterObstacleLists[i];
+                obs = enemyDynamicObstacles;
+                for (const auto& e : enemies) {
+                    if (e && e->isAlive()) {
+                        obs.push_back(core::fromFloatRect(e->getGlobalBounds()));
+                    }
+                }
+                for (std::size_t j = 0; j < shooters.size(); ++j) {
+                    if (i == j || !shooters[j]->isAlive()) continue;
+                    obs.push_back(core::fromFloatRect(shooters[j]->getGlobalBounds()));
+                }
+                shooter->setObstacles(&obs);
+                shooter->update(kFixedDt);
+            }
+
+            // Separation pass: gently push enemies away from each other.
+            std::vector<sf::Vector2f> centers;
+            std::vector<float> radii;
+            std::vector<std::size_t> enemyIndex(enemies.size());
+            std::vector<std::size_t> shooterIndex(shooters.size());
+            centers.reserve(enemies.size() + shooters.size());
+            radii.reserve(enemies.size() + shooters.size());
+
+            auto addCenter = [&](const auto& entity) {
+                const auto gb = entity->getGlobalBounds();
+                centers.push_back({gb.position.x + gb.size.x * 0.5f,
+                                   gb.position.y + gb.size.y * 0.5f});
+                radii.push_back(0.5f * std::max(gb.size.x, gb.size.y));
+            };
+
+            for (std::size_t i = 0; i < enemies.size(); ++i) {
+                if (!enemies[i]->isAlive()) {
+                    enemyIndex[i] = static_cast<std::size_t>(-1);
+                    continue;
+                }
+                enemyIndex[i] = centers.size();
+                addCenter(enemies[i]);
+            }
+            for (std::size_t i = 0; i < shooters.size(); ++i) {
+                if (!shooters[i]->isAlive()) {
+                    shooterIndex[i] = static_cast<std::size_t>(-1);
+                    continue;
+                }
+                shooterIndex[i] = centers.size();
+                addCenter(shooters[i]);
+            }
+
+            auto computeSeparation = [&](std::size_t idx) {
+                sf::Vector2f sep{0.f, 0.f};
+                const auto selfPos = centers[idx];
+                const float selfR = radii[idx];
+                for (std::size_t j = 0; j < centers.size(); ++j) {
+                    if (j == idx) continue;
+                    const sf::Vector2f delta{selfPos.x - centers[j].x, selfPos.y - centers[j].y};
+                    const float distSq = delta.x * delta.x + delta.y * delta.y;
+                    const float minDist = selfR + radii[j] + 2.f;
+                    if (distSq >= minDist * minDist) continue;
+                    const float dist = std::sqrt(std::max(distSq, 0.0001f));
+                    const float overlap = minDist - dist;
+                    const sf::Vector2f dir{delta.x / dist, delta.y / dist};
+                    sep.x += dir.x * overlap;
+                    sep.y += dir.y * overlap;
+                }
+                return sep;
+            };
+
+            for (std::size_t i = 0; i < enemies.size(); ++i) {
+                if (!enemies[i]->isAlive()) continue;
+                const std::size_t idx = enemyIndex[i];
+                if (idx == static_cast<std::size_t>(-1)) continue;
+                sf::Vector2f sep = computeSeparation(idx);
+                const float len = std::sqrt(sep.x * sep.x + sep.y * sep.y);
+                if (len > 0.001f) {
+                    const float scale = std::min(kEnemySeparationMaxPush, len) / len;
+                    sep.x *= scale * kEnemySeparationStrength * kFixedDt;
+                    sep.y *= scale * kEnemySeparationStrength * kFixedDt;
+                    const sf::Vector2f resolved = enemies[i]->resolveMove(sep);
+                    if (resolved.x != 0.f || resolved.y != 0.f) {
+                        enemies[i]->move(resolved);
+                    }
+                }
+            }
+
+            for (std::size_t i = 0; i < shooters.size(); ++i) {
+                if (!shooters[i]->isAlive()) continue;
+                const std::size_t idx = shooterIndex[i];
+                if (idx == static_cast<std::size_t>(-1)) continue;
+                sf::Vector2f sep = computeSeparation(idx);
+                const float len = std::sqrt(sep.x * sep.x + sep.y * sep.y);
+                if (len > 0.001f) {
+                    const float scale = std::min(kEnemySeparationMaxPush, len) / len;
+                    sep.x *= scale * kEnemySeparationStrength * kFixedDt;
+                    sep.y *= scale * kEnemySeparationStrength * kFixedDt;
+                    const sf::Vector2f resolved = shooters[i]->resolveMove(sep);
+                    if (resolved.x != 0.f || resolved.y != 0.f) {
+                        shooters[i]->move(resolved);
+                    }
+                }
+            }
+
+            // Projectile-player collision
+            for (auto& shooter : shooters) {
+                for (auto& proj : shooter->projectiles()) {
+                    if (proj->consumed()) continue;
+                    if (!proj->getGlobalBounds().findIntersection(player.getGlobalBounds()).has_value()) {
+                        continue;
+                    }
+                    if (proj->isHealing()) {
+                        const int before = player.health();
+                        player.heal(proj->healingAmount());
+                        const int healed = player.health() - before;
+                        if (healed > 0) {
+                            std::cout << "[Combat] Caught healing shot! +" << healed << " HP\n";
+                        }
+                        proj->markConsumed();
+                        continue;
+                    }
+                    player.takeDamage(proj->damage());
+                    triggerShake(10.f);
+                    std::cout << "[Combat] Player hit by projectile! HP: "
+                              << player.health() << "/" << player.maxHealth() << "\n";
+                    proj->markConsumed();
+                    if (player.isDead()) {
+                        gameState = core::GameState::GameOver;
+                        gameOverSelection = 0;
+                        std::cout << "[Game] Player died -- GAME OVER\n";
+                    }
+                }
+            }
+
+            // Player projectiles (pellets) — update + collide vs enemies
             for (auto& proj : playerProjectiles) proj->update(kFixedDt);
             for (auto& proj : playerProjectiles) {
                 if (proj->consumed()) continue;
@@ -723,11 +929,14 @@ int main() {
                     enemies.push_back(std::make_unique<entities::Enemy>(
                         pos, sf::Vector2f{36.f, 36.f}, worldBounds, &res));
                     enemies.back()->setObstacles(&obstacleAABBs);
+                    enemies.back()->setChaseSpeed(variedSpeed(kChaserSpeedBase));
                     std::cout << "[Spawn] Chaser at (" << pos.x << "," << pos.y << ")\n";
                 } else {
                     shooters.push_back(std::make_unique<entities::ShooterEnemy>(
                         pos, worldBounds, &res));
                     shooters.back()->setObstacles(&obstacleAABBs);
+                    shooters.back()->setProjectileObstacles(&obstacleAABBs);
+                    shooters.back()->setChaseSpeed(variedSpeed(kShooterSpeedBase));
                     std::cout << "[Spawn] Shooter at (" << pos.x << "," << pos.y << ")\n";
                 }
             }
@@ -861,7 +1070,7 @@ int main() {
         for (auto& p : playerProjectiles) window.draw(*p);
 
         // UI (back to default view so it stays on screen)
-        window.setView(window.getDefaultView());
+        window.setView(uiView);
 
         ui::HudState hudState;
         hudState.waveNumber = waveManager.waveNumber();
@@ -883,6 +1092,9 @@ int main() {
         hudState.weaponName = player.weapon()
             ? std::string(player.weapon()->name())
             : std::string("(none)");
+        hudState.ammoInfinite = false;
+        hudState.ammoMax = (hudState.weaponName == "Shotgun") ? ammoMax : 0;
+        hudState.ammoCurrent = (hudState.weaponName == "Shotgun") ? ammoCurrent : 0;
 
         // Menu layouts
         if (hudState.isGameOver) {

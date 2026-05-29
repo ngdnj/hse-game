@@ -4,10 +4,27 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <random>
 
 using namespace sf;
 
 namespace entities {
+
+namespace {
+constexpr float kHealShotChance = 0.12f;
+constexpr int kHealShotAmount = 5;
+constexpr float kShotAcceleration = 60.f;
+
+std::mt19937& localRng() {
+    static std::mt19937 rng_{std::random_device{}()};
+    return rng_;
+}
+
+bool rollChance(float p) {
+    std::uniform_real_distribution<float> dist{0.f, 1.f};
+    return dist(localRng()) < std::clamp(p, 0.f, 1.f);
+}
+}
 
 ShooterEnemy::ShooterEnemy(const Vector2f& pos, const FloatRect& worldBounds,
                            core::ResourceManager* res)
@@ -87,6 +104,15 @@ void ShooterEnemy::update(float dt) {
             shootCooldown_ = shootInterval_;
             const Vector2f dir = normalizeOrZero(toPlayer);
             auto proj = std::make_unique<Projectile>(getPosition(), dir, 200.f, 15);
+            proj->setObstacles(projectileObstacles_);
+            proj->setMaxBounces(2);
+            proj->setAcceleration(kShotAcceleration);
+            if (rollChance(kHealShotChance)) {
+                proj->setHealing(kHealShotAmount);
+                proj->setTint(Color(90, 230, 130), Color(90, 200, 120, 90), Color(90, 220, 140, 160));
+            } else {
+                proj->setTint(Color(180, 180, 190), Color(120, 120, 130, 80), Color(170, 170, 180, 160));
+            }
             projectiles_.push_back(std::move(proj));
         }
     }

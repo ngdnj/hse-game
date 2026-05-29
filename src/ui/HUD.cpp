@@ -2,6 +2,7 @@
 
 #include <array>
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <string>
 
@@ -62,8 +63,9 @@ void HUD::draw(sf::RenderTarget& target, const HudState& state) const {
              " | Inv: " + std::to_string(invUsed) + "/" + std::to_string(invCap), 16);
 
     drawHealthBar(target, {10.f, 92.f}, state.playerHealth, state.playerMaxHealth);
+    drawAmmoBar(target, {10.f, 108.f}, state.ammoCurrent, state.ammoMax, state.ammoInfinite);
 
-    int invY = 116;
+    int invY = 132;
     if (state.inventory) {
         state.inventory->forEach([&](const std::string& name, const core::ItemData& data) {
             drawText(target, {10.f, static_cast<float>(invY)},
@@ -72,8 +74,10 @@ void HUD::draw(sf::RenderTarget& target, const HudState& state) const {
         });
     }
 
-    drawDashCooldown(target, {10.f, static_cast<float>(invY + 6)},
-                     state.dashCooldownRemaining, state.dashCooldownTotal);
+    const std::string dashLabel = state.dashCooldownRemaining <= 0.f
+        ? "Dash: ready"
+        : "Dash: " + std::to_string(static_cast<int>(std::ceil(state.dashCooldownRemaining))) + "s";
+    drawText(target, {10.f, static_cast<float>(invY + 6)}, dashLabel, 12);
 
     if (state.shopOpen) {
         drawShopOverlay(target, state);
@@ -150,6 +154,34 @@ void HUD::drawHealthBar(sf::RenderTarget& target, sf::Vector2f pos,
              "HP " + std::to_string(hp) + "/" + std::to_string(maxHp), 12);
 }
 
+void HUD::drawAmmoBar(sf::RenderTarget& target, sf::Vector2f pos,
+                      int ammo, int maxAmmo, bool infinite) const {
+    const float ratio = (maxAmmo > 0)
+        ? std::clamp(static_cast<float>(ammo) / static_cast<float>(maxAmmo), 0.f, 1.f)
+        : (infinite ? 1.f : 0.f);
+
+    sf::RectangleShape bg({kBarWidth, kBarHeight + 4.f});
+    bg.setPosition(pos);
+    bg.setFillColor(sf::Color(40, 40, 40));
+    bg.setOutlineColor(sf::Color(120, 120, 120));
+    bg.setOutlineThickness(1.f);
+    target.draw(bg);
+
+    sf::RectangleShape fill({kBarWidth * ratio, kBarHeight + 4.f});
+    fill.setPosition(pos);
+    fill.setFillColor(sf::Color(220, 170, 80));
+    target.draw(fill);
+
+    if (infinite) {
+        drawText(target, {pos.x + kBarWidth + 8.f, pos.y - 2.f}, "Ammo INF", 12);
+    } else if (maxAmmo > 0) {
+        drawText(target, {pos.x + kBarWidth + 8.f, pos.y - 2.f},
+                 "Ammo " + std::to_string(ammo) + "/" + std::to_string(maxAmmo), 12);
+    } else {
+        drawText(target, {pos.x + kBarWidth + 8.f, pos.y - 2.f}, "Ammo --", 12);
+    }
+}
+
 void HUD::drawShopOverlay(sf::RenderTarget& target, const HudState& state) const {
     if (!state.shop) return;
 
@@ -204,7 +236,9 @@ void HUD::drawGameOver(sf::RenderTarget& target, const HudState& state) const {
     dim.setFillColor(sf::Color(0, 0, 0, 200));
     target.draw(dim);
 
-    const sf::Vector2f panelSize{420.f, 260.f};
+    const float panelW = std::clamp(winW * 0.6f, 300.f, 520.f);
+    const float panelH = std::clamp(winH * 0.45f, 220.f, 320.f);
+    const sf::Vector2f panelSize{panelW, panelH};
     const sf::Vector2f panelPos{
         (winW - panelSize.x) * 0.5f,
         (winH - panelSize.y) * 0.5f};
@@ -217,19 +251,20 @@ void HUD::drawGameOver(sf::RenderTarget& target, const HudState& state) const {
     target.draw(panel);
 
     if (hasFont_) {
-        sf::Text title(font_, sf::String("GAME OVER"), 48);
+        const unsigned titleSize = static_cast<unsigned>(std::clamp(panelH * 0.22f, 28.f, 48.f));
+        sf::Text title(font_, sf::String("GAME OVER"), titleSize);
         title.setFillColor(sf::Color(240, 80, 80));
         title.setOutlineColor(sf::Color::Black);
         title.setOutlineThickness(2.f);
         const auto titleBounds = title.getLocalBounds();
         title.setPosition({
             panelPos.x + (panelSize.x - titleBounds.size.x) * 0.5f - titleBounds.position.x,
-            panelPos.y + 18.f
+            panelPos.y + panelSize.y * 0.08f
         });
         target.draw(title);
     }
 
-    drawText(target, {panelPos.x + 20.f, panelPos.y + 92.f},
+    drawText(target, {panelPos.x + 20.f, panelPos.y + panelSize.y * 0.36f},
              "Choose an option:", 16);
 
     drawButton(target, state.gameOverBtnRestart, "Restart", state.gameOverSelected == 0);
@@ -271,7 +306,9 @@ void HUD::drawMainMenu(sf::RenderTarget& target, const HudState& state) const {
     dim.setFillColor(sf::Color(0, 0, 0, 190));
     target.draw(dim);
 
-    const sf::Vector2f panelSize{520.f, 320.f};
+    const float panelW = std::clamp(winW * 0.65f, 340.f, 560.f);
+    const float panelH = std::clamp(winH * 0.5f, 240.f, 360.f);
+    const sf::Vector2f panelSize{panelW, panelH};
     const sf::Vector2f panelPos{(winW - panelSize.x) * 0.5f, (winH - panelSize.y) * 0.5f};
     sf::RectangleShape panel(panelSize);
     panel.setPosition(panelPos);
@@ -280,8 +317,8 @@ void HUD::drawMainMenu(sf::RenderTarget& target, const HudState& state) const {
     panel.setOutlineThickness(3.f);
     target.draw(panel);
 
-    drawText(target, {panelPos.x + 20.f, panelPos.y + 18.f}, "MAIN MENU (TODO)", 28);
-    drawText(target, {panelPos.x + 20.f, panelPos.y + 54.f}, "This is a placeholder screen.", 16);
+    drawText(target, {panelPos.x + 20.f, panelPos.y + panelSize.y * 0.08f}, "MAIN MENU (TODO)", 28);
+    drawText(target, {panelPos.x + 20.f, panelPos.y + panelSize.y * 0.22f}, "This is a placeholder screen.", 16);
 
     drawButton(target, state.mainMenuBtnStart, "Start", state.mainMenuSelected == 0);
     drawButton(target, state.mainMenuBtnExit, "Exit", state.mainMenuSelected == 1);
@@ -296,7 +333,9 @@ void HUD::drawRoundComplete(sf::RenderTarget& target, const HudState& state) con
     dim.setFillColor(sf::Color(0, 0, 0, 170));
     target.draw(dim);
 
-    const sf::Vector2f panelSize{520.f, 260.f};
+    const float panelW = std::clamp(winW * 0.6f, 340.f, 560.f);
+    const float panelH = std::clamp(winH * 0.45f, 220.f, 320.f);
+    const sf::Vector2f panelSize{panelW, panelH};
     const sf::Vector2f panelPos{(winW - panelSize.x) * 0.5f, (winH - panelSize.y) * 0.5f};
     sf::RectangleShape panel(panelSize);
     panel.setPosition(panelPos);
@@ -305,8 +344,8 @@ void HUD::drawRoundComplete(sf::RenderTarget& target, const HudState& state) con
     panel.setOutlineThickness(3.f);
     target.draw(panel);
 
-    drawText(target, {panelPos.x + 18.f, panelPos.y + 16.f}, "ROUND CLEARED", 28);
-    drawText(target, {panelPos.x + 18.f, panelPos.y + 52.f}, "Choose what to do next:", 16);
+    drawText(target, {panelPos.x + 18.f, panelPos.y + panelSize.y * 0.1f}, "ROUND CLEARED", 28);
+    drawText(target, {panelPos.x + 18.f, panelPos.y + panelSize.y * 0.25f}, "Choose what to do next:", 16);
 
     drawButton(target, state.roundCompleteBtnNext, "Next round", state.roundCompleteSelected == 0);
     drawButton(target, state.roundCompleteBtnMenu, "Menu", state.roundCompleteSelected == 1);

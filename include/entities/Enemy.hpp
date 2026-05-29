@@ -94,6 +94,7 @@ public:
     [[nodiscard]] bool consumed() const noexcept { return consumed_; }
 
     void consume() noexcept { consumed_ = true; }
+    void setAttracted(bool attracted) noexcept { attracted_ = attracted; }
 
 protected:
     void onDraw(sf::RenderTarget& target, sf::RenderStates states) const override;
@@ -102,6 +103,8 @@ private:
     std::string itemName_;
     int value_{1};
     bool consumed_{false};
+    bool attracted_{false};
+    float pulse_{0.f};
 
     // Visual
     sf::CircleShape circle_;

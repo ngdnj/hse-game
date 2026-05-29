@@ -21,6 +21,10 @@ struct HudState {
     int playerHealth{100};
     int playerMaxHealth{100};
 
+    int ammoCurrent{0};
+    int ammoMax{0};
+    bool ammoInfinite{false};
+
     float dashCooldownRemaining{0.f};
     float dashCooldownTotal{1.5f};
 
@@ -67,6 +71,8 @@ private:
                   const std::string& str, unsigned size = 16) const;
     void drawDashCooldown(sf::RenderTarget& target, sf::Vector2f pos,
                           float remaining, float total) const;
+    void drawAmmoBar(sf::RenderTarget& target, sf::Vector2f pos,
+                     int ammo, int maxAmmo, bool infinite) const;
     void drawHealthBar(sf::RenderTarget& target, sf::Vector2f pos,
                        int hp, int maxHp) const;
     void drawShopOverlay(sf::RenderTarget& target, const HudState& state) const;

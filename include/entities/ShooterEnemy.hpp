@@ -28,6 +28,11 @@ public:
 
     void setPlayerPosition(const sf::Vector2f* pos) { playerPos_ = pos; }
     void setObstacles(const std::vector<core::AABB>* obstacles) noexcept { obstacles_ = obstacles; }
+    void setProjectileObstacles(const std::vector<core::AABB>* obstacles) noexcept {
+        projectileObstacles_ = obstacles;
+    }
+    void setChaseSpeed(float speed) noexcept { chaseSpeed_ = speed; }
+
     sf::Vector2f resolveMove(sf::Vector2f desired) noexcept;
 
     // Projectile ownership
@@ -59,6 +64,7 @@ private:
 
     float chaseSpeed_{70.f};
     const std::vector<core::AABB>* obstacles_{nullptr};
+    const std::vector<core::AABB>* projectileObstacles_{nullptr};
     sf::Vector2f knockbackVel_{0.f, 0.f};
 
     // Shooting state
