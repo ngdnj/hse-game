@@ -200,217 +200,25 @@ int main() {
     core::ResourceManager res;
     res.initDefaults();
 
-    // Create player with sprite atlases (gracefully falls back to colored
-    // rectangle if textures fail to load — see Player ctor).
-    Player player(sf::Vector2f{40.f, 40.f}, playerSpawn,
-                  worldBounds,
-                  "assets/player/run.png",
-                  "assets/player/idle.png");
-    player.setSpeed(220.f);
-    player.setAttackDamage(25);
-    player.setAttackRange(55.f);
+    {
+        auto chaserDesc = res.getShape("enemy");
+        chaserDesc.texturePath = "assets/enemy/chaser.png";
+        chaserDesc.fillColor = sf::Color::White;
+        res.registerShape("enemy", chaserDesc);
 
-    // Inventory
-    core::Inventory inventory(20);
+        auto shooterDesc = res.getShape("shooter");
+        shooterDesc.texturePath = "assets/enemy/shooter.png";
+        shooterDesc.fillColor = sf::Color::White;
+        res.registerShape("shooter", shooterDesc);
+        
+        auto playerDesc = res.getShape("player");
+        playerDesc.texturePath = "assets/player/idle.png";
+        playerDesc.fillColor = sf::Color::White;
+        res.registerShape("player", playerDesc);
+    }
 
-    // Static obstacles (declaration before setup)
-    std::vector<std::unique_ptr<core::Obstacle>> obstacles;
-    std::vector<core::AABB> obstacleAABBs;
-
-    // ---- Randomized terrain tiles ----
-    constexpr float kTileSize = 80.f;
-    const int tilesX = static_cast<int>(worldSize.x / kTileSize);
-    const int tilesY = static_cast<int>(worldSize.y / kTileSize);
-    std::vector<std::uint8_t> terrain;
-    terrain.reserve(static_cast<std::size_t>(tilesX * tilesY));
-    sf::VertexArray terrainMesh(sf::PrimitiveType::Triangles);
-
-    auto buildTerrainMesh = [&]() {
-        terrainMesh.clear();
-        terrainMesh.resize(static_cast<std::size_t>(tilesX * tilesY * 6));
-        const auto colorFor = [](std::uint8_t t) {
-            switch (t) {
-                case 1: return sf::Color(70, 90, 70);   // dark grass
-                case 2: return sf::Color(90, 80, 60);   // dirt
-                default: return sf::Color(80, 110, 80); // grass
-            }
-        };
-
-        std::size_t idx = 0;
-        for (int y = 0; y < tilesY; ++y) {
-            for (int x = 0; x < tilesX; ++x) {
-                const float px = x * kTileSize;
-                const float py = y * kTileSize;
-                const std::uint8_t t = terrain[static_cast<std::size_t>(y * tilesX + x)];
-                const sf::Color c = colorFor(t);
-
-                const sf::Vector2f p0{px, py};
-                const sf::Vector2f p1{px + kTileSize, py};
-                const sf::Vector2f p2{px + kTileSize, py + kTileSize};
-                const sf::Vector2f p3{px, py + kTileSize};
-
-                // Triangle 1: p0, p1, p2
-                terrainMesh[idx + 0].position = p0;
-                terrainMesh[idx + 1].position = p1;
-                terrainMesh[idx + 2].position = p2;
-                // Triangle 2: p0, p2, p3
-                terrainMesh[idx + 3].position = p0;
-                terrainMesh[idx + 4].position = p2;
-                terrainMesh[idx + 5].position = p3;
-
-                for (int i = 0; i < 6; ++i) {
-                    terrainMesh[idx + static_cast<std::size_t>(i)].color = c;
-                }
-                idx += 6;
-            }
-        }
-    };
-
-    auto generateTerrain = [&]() {
-        terrain.assign(static_cast<std::size_t>(tilesX * tilesY), 0);
-        std::uniform_int_distribution<int> basePick(0, 99);
-        for (int y = 0; y < tilesY; ++y) {
-            for (int x = 0; x < tilesX; ++x) {
-                const int roll = basePick(rng());
-                std::uint8_t t = 0;
-                if (roll < 12) t = 2;       // dirt
-                else if (roll < 28) t = 1;  // dark grass
-                terrain[static_cast<std::size_t>(y * tilesX + x)] = t;
-            }
-        }
-
-        // Simple smoothing: apply a few neighbor-majority passes.
-        std::vector<std::uint8_t> scratch = terrain;
-        const int passes = 3;
-        for (int p = 0; p < passes; ++p) {
-            for (int y = 0; y < tilesY; ++y) {
-                for (int x = 0; x < tilesX; ++x) {
-                    int count0 = 0;
-                    int count1 = 0;
-                    int count2 = 0;
-                    for (int oy = -1; oy <= 1; ++oy) {
-                        for (int ox = -1; ox <= 1; ++ox) {
-                            const int nx = std::clamp(x + ox, 0, tilesX - 1);
-                            const int ny = std::clamp(y + oy, 0, tilesY - 1);
-                            const std::uint8_t t = terrain[static_cast<std::size_t>(ny * tilesX + nx)];
-                            if (t == 0) ++count0;
-                            else if (t == 1) ++count1;
-                            else ++count2;
-                        }
-                    }
-                    std::uint8_t next = 0;
-                    if (count2 >= count1 && count2 >= count0) next = 2;
-                    else if (count1 >= count0) next = 1;
-                    scratch[static_cast<std::size_t>(y * tilesX + x)] = next;
-                }
-            }
-            terrain.swap(scratch);
-        }
-        buildTerrainMesh();
-    };
-
-    // ---- Randomized static obstacles ----
-    const auto obstacleColor = sf::Color(80, 100, 80);
-    const auto obstacleOutline = sf::Color(50, 60, 50);
-    const auto addObs = [&](int id, float x, float y, float w, float h) {
-        obstacles.push_back(std::make_unique<core::Obstacle>(core::ObstacleDesc{
-            id, {x, y}, {w, h}, obstacleColor, obstacleOutline, 2.f}));
-        obstacleAABBs.push_back(obstacles.back()->getAABB());
-    };
-    auto generateObstacles = [&]() {
-        obstacles.clear();
-        obstacleAABBs.clear();
-
-        const int targetCount = std::uniform_int_distribution<int>{8, 14}(rng());
-        const float margin = 70.f;
-        const float safeRadius = 220.f;
-        const core::AABB safeAabb = core::makeAABB(
-            {playerSpawn.x - safeRadius, playerSpawn.y - safeRadius},
-            {safeRadius * 2.f, safeRadius * 2.f});
-
-        std::uniform_real_distribution<float> longW(140.f, 240.f);
-        std::uniform_real_distribution<float> longH(40.f, 70.f);
-        std::uniform_real_distribution<float> tallW(40.f, 70.f);
-        std::uniform_real_distribution<float> tallH(140.f, 240.f);
-        std::uniform_real_distribution<float> squareW(60.f, 110.f);
-        std::uniform_real_distribution<float> squareH(60.f, 110.f);
-        std::uniform_real_distribution<float> pick(0.f, 1.f);
-
-        const float minX = worldBounds.position.x + margin;
-        const float minY = worldBounds.position.y + margin;
-        const float maxX = worldBounds.position.x + worldBounds.size.x - margin;
-        const float maxY = worldBounds.position.y + worldBounds.size.y - margin;
-
-        auto overlaps = [&](const core::AABB& candidate) {
-            if (core::intersects(candidate.min, candidate.max, safeAabb.min, safeAabb.max)) {
-                return true;
-            }
-            for (const auto& existing : obstacleAABBs) {
-                const float pad = 24.f;
-                const core::AABB expanded{{existing.min.x - pad, existing.min.y - pad},
-                                          {existing.max.x + pad, existing.max.y + pad}};
-                if (core::intersects(candidate.min, candidate.max, expanded.min, expanded.max)) {
-                    return true;
-                }
-            }
-            return false;
-        };
-
-        int placed = 0;
-        int id = 1;
-        const int maxAttempts = targetCount * 40;
-        for (int attempts = 0; placed < targetCount && attempts < maxAttempts; ++attempts) {
-            sf::Vector2f size;
-            const float roll = pick(rng());
-            if (roll < 0.4f) {
-                size = {longW(rng()), longH(rng())};
-            } else if (roll < 0.8f) {
-                size = {tallW(rng()), tallH(rng())};
-            } else {
-                size = {squareW(rng()), squareH(rng())};
-            }
-
-            const float maxPosX = maxX - size.x;
-            const float maxPosY = maxY - size.y;
-            if (maxPosX <= minX || maxPosY <= minY) {
-                continue;
-            }
-
-            std::uniform_real_distribution<float> posX(minX, maxPosX);
-            std::uniform_real_distribution<float> posY(minY, maxPosY);
-            const float x = posX(rng());
-            const float y = posY(rng());
-            const core::AABB candidate = core::makeAABB({x, y}, size);
-            if (overlaps(candidate)) continue;
-
-            addObs(id++, x, y, size.x, size.y);
-            ++placed;
-        }
-    };
-    generateTerrain();
-    generateObstacles();
-    // Feed obstacles to entities
-    player.setObstacles(&obstacleAABBs);
-
-    // Game state
-    std::vector<std::unique_ptr<entities::Enemy>> enemies;
-    std::vector<std::unique_ptr<entities::ShooterEnemy>> shooters;
-    std::vector<std::unique_ptr<entities::Loot>> loot;
-    std::vector<std::unique_ptr<entities::Projectile>> playerProjectiles;
-
-    // Dynamic collision sets (rebuilt each fixed tick)
-    std::vector<core::AABB> playerDynamicObstacles;
-    std::vector<core::AABB> enemyDynamicObstacles;
-    playerDynamicObstacles.reserve(256);
-    enemyDynamicObstacles.reserve(256);
-
-    int killCount = 0;
-    int ammoMax = kDefaultAmmoMax;
-    int ammoCurrent = kDefaultAmmoMax;
-
-    // Wave system
-    core::WaveManager waveManager(4.f);
-    waveManager.startNextWave();
+    core::WaveManager waveMgr(res);
+    waveMgr.startNextWave();
 
     // Shop (opens between waves)
     core::Shop shop;
@@ -1298,4 +1106,3 @@ int main() {
     std::cout << "[Game] Shutdown. Kills: " << killCount << "\n";
     return 0;
 }
-
